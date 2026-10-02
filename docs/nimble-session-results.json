@@ -1,0 +1,517 @@
+{
+  "createdAt": "2026-10-02T20:58:27.903Z",
+  "gateway": {
+    "root": "/private/tmp/jev-metrics-verification-20261002-2344/lib/node_modules/jev-gateway",
+    "mode": "package",
+    "version": "0.5.0",
+    "fingerprint": "5e14637af2d5d3e7"
+  },
+  "inventory": {
+    "codex": {
+      "available": true,
+      "version": "codex-cli 0.160.0",
+      "auth": "subscription"
+    },
+    "claude": {
+      "available": true,
+      "version": "2.1.207 (Claude Code)",
+      "auth": "claude.ai"
+    },
+    "opencode": {
+      "available": true,
+      "version": "1.18.16",
+      "auth": "absent_for_gateway_provider"
+    }
+  },
+  "samplePerCell": 1,
+  "modelLoad": "not forced cold; existing Ollama models left loaded",
+  "scenarios": [
+    {
+      "client": "codex",
+      "language": "uk",
+      "routing": "on",
+      "outcome": "passed",
+      "failedChecks": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "taskVerified": true,
+      "durationMs": 32030,
+      "session": {
+        "toolCalls": 3,
+        "toolResults": 3,
+        "read": true,
+        "edit": true,
+        "check": true,
+        "final": true,
+        "completed": true,
+        "thinking": false
+      },
+      "models": [
+        "gpt-6.1-sol"
+      ],
+      "upstream": "https://chatgpt.com/backend-api/codex",
+      "gateway": {
+        "requests": 3,
+        "requestsObserved": 3,
+        "modes": {
+          "forced": 2,
+          "none": 1
+        },
+        "upstreamStatuses": {
+          "200": 3
+        },
+        "reasons": {},
+        "inferenceRequests": 6,
+        "routingLatencyMs": 15036,
+        "loadMs": 51.051375,
+        "nativeTotalMs": 15021.240084999998,
+        "upstreamUsage": {
+          "input": 40677,
+          "output": 281,
+          "cached": 23680
+        },
+        "thinkingRequests": 0,
+        "promptCacheRequests": 0,
+        "toolResultRequests": 2
+      }
+    },
+    {
+      "client": "codex",
+      "language": "uk",
+      "routing": "off",
+      "outcome": "passed",
+      "failedChecks": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "taskVerified": true,
+      "durationMs": 18793,
+      "session": {
+        "toolCalls": 3,
+        "toolResults": 3,
+        "read": true,
+        "edit": true,
+        "check": true,
+        "final": true,
+        "completed": true,
+        "thinking": false
+      },
+      "models": [
+        "gpt-6.1-sol"
+      ],
+      "upstream": "https://chatgpt.com/backend-api/codex",
+      "gateway": {
+        "requests": 3,
+        "requestsObserved": 3,
+        "modes": {
+          "passthrough": 3
+        },
+        "upstreamStatuses": {
+          "200": 3
+        },
+        "reasons": {
+          "routing_disabled": 3
+        },
+        "upstreamUsage": {
+          "input": 40682,
+          "output": 281,
+          "cached": 13056
+        },
+        "thinkingRequests": 0,
+        "promptCacheRequests": 0,
+        "toolResultRequests": 2
+      }
+    },
+    {
+      "client": "codex",
+      "language": "uk",
+      "routing": "unavailable",
+      "outcome": "passed",
+      "failedChecks": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "taskVerified": true,
+      "durationMs": 22532,
+      "session": {
+        "toolCalls": 4,
+        "toolResults": 4,
+        "read": true,
+        "edit": true,
+        "check": true,
+        "final": true,
+        "completed": true,
+        "thinking": false
+      },
+      "models": [
+        "gpt-6.1-sol"
+      ],
+      "upstream": "https://chatgpt.com/backend-api/codex",
+      "gateway": {
+        "requests": 3,
+        "requestsObserved": 3,
+        "modes": {
+          "passthrough": 3
+        },
+        "upstreamStatuses": {
+          "200": 3
+        },
+        "reasons": {
+          "jev_error: 503 from Ollama": 3
+        },
+        "inferenceRequests": 3,
+        "routingLatencyMs": 3,
+        "upstreamUsage": {
+          "input": 40769,
+          "output": 293,
+          "cached": 26496
+        },
+        "thinkingRequests": 0,
+        "promptCacheRequests": 0,
+        "toolResultRequests": 2
+      }
+    },
+    {
+      "client": "codex",
+      "language": "en",
+      "routing": "on",
+      "outcome": "passed",
+      "failedChecks": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "taskVerified": true,
+      "durationMs": 33842,
+      "session": {
+        "toolCalls": 3,
+        "toolResults": 3,
+        "read": true,
+        "edit": true,
+        "check": true,
+        "final": true,
+        "completed": true,
+        "thinking": false
+      },
+      "models": [
+        "gpt-6.1-sol"
+      ],
+      "upstream": "https://chatgpt.com/backend-api/codex",
+      "gateway": {
+        "requests": 3,
+        "requestsObserved": 3,
+        "modes": {
+          "forced": 2,
+          "none": 1
+        },
+        "upstreamStatuses": {
+          "200": 3
+        },
+        "reasons": {},
+        "inferenceRequests": 6,
+        "routingLatencyMs": 17193,
+        "loadMs": 49.120292,
+        "nativeTotalMs": 17182.869959,
+        "upstreamUsage": {
+          "input": 41131,
+          "output": 237,
+          "cached": 23936
+        },
+        "thinkingRequests": 0,
+        "promptCacheRequests": 0,
+        "toolResultRequests": 2
+      }
+    },
+    {
+      "client": "codex",
+      "language": "en",
+      "routing": "off",
+      "outcome": "passed",
+      "failedChecks": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "taskVerified": true,
+      "durationMs": 18587,
+      "session": {
+        "toolCalls": 4,
+        "toolResults": 4,
+        "read": true,
+        "edit": true,
+        "check": true,
+        "final": true,
+        "completed": true,
+        "thinking": false
+      },
+      "models": [
+        "gpt-6.1-sol"
+      ],
+      "upstream": "https://chatgpt.com/backend-api/codex",
+      "gateway": {
+        "requests": 3,
+        "requestsObserved": 3,
+        "modes": {
+          "passthrough": 3
+        },
+        "upstreamStatuses": {
+          "200": 3
+        },
+        "reasons": {
+          "routing_disabled": 3
+        },
+        "upstreamUsage": {
+          "input": 40668,
+          "output": 282,
+          "cached": 26496
+        },
+        "thinkingRequests": 0,
+        "promptCacheRequests": 0,
+        "toolResultRequests": 2
+      }
+    },
+    {
+      "client": "codex",
+      "language": "en",
+      "routing": "unavailable",
+      "outcome": "passed",
+      "failedChecks": [],
+      "exitCode": 0,
+      "timedOut": false,
+      "taskVerified": true,
+      "durationMs": 16032,
+      "session": {
+        "toolCalls": 4,
+        "toolResults": 4,
+        "read": true,
+        "edit": true,
+        "check": true,
+        "final": true,
+        "completed": true,
+        "thinking": false
+      },
+      "models": [
+        "gpt-6.1-sol"
+      ],
+      "upstream": "https://chatgpt.com/backend-api/codex",
+      "gateway": {
+        "requests": 3,
+        "requestsObserved": 3,
+        "modes": {
+          "passthrough": 3
+        },
+        "upstreamStatuses": {
+          "200": 3
+        },
+        "reasons": {
+          "jev_error: 503 from Ollama": 3
+        },
+        "inferenceRequests": 3,
+        "routingLatencyMs": 3,
+        "upstreamUsage": {
+          "input": 40870,
+          "output": 281,
+          "cached": 18176
+        },
+        "thinkingRequests": 0,
+        "promptCacheRequests": 0,
+        "toolResultRequests": 2
+      }
+    },
+    {
+      "client": "claude",
+      "language": "uk",
+      "routing": "on",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent"
+    },
+    {
+      "client": "claude",
+      "language": "uk",
+      "routing": "off",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent"
+    },
+    {
+      "client": "claude",
+      "language": "uk",
+      "routing": "unavailable",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent"
+    },
+    {
+      "client": "claude",
+      "language": "en",
+      "routing": "on",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent"
+    },
+    {
+      "client": "claude",
+      "language": "en",
+      "routing": "off",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent"
+    },
+    {
+      "client": "claude",
+      "language": "en",
+      "routing": "unavailable",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent"
+    },
+    {
+      "client": "opencode",
+      "language": "uk",
+      "routing": "on",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent_for_gateway_provider"
+    },
+    {
+      "client": "opencode",
+      "language": "uk",
+      "routing": "off",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent_for_gateway_provider"
+    },
+    {
+      "client": "opencode",
+      "language": "uk",
+      "routing": "unavailable",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent_for_gateway_provider"
+    },
+    {
+      "client": "opencode",
+      "language": "en",
+      "routing": "on",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent_for_gateway_provider"
+    },
+    {
+      "client": "opencode",
+      "language": "en",
+      "routing": "off",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent_for_gateway_provider"
+    },
+    {
+      "client": "opencode",
+      "language": "en",
+      "routing": "unavailable",
+      "outcome": "unverified",
+      "reason": "upstream_auth_absent_for_gateway_provider"
+    }
+  ],
+  "ollama": {
+    "version": "0.35.0",
+    "model": "nimble:latest",
+    "loadedBeforeRun": true,
+    "quantization": "Q8_0",
+    "contextLength": 8192,
+    "digest": "24e550a16a7081881be2f1f0d91e8cc13a597472735c04119f035a0a85c67e0c"
+  },
+  "completedAt": "2026-10-02T21:05:24.681995+00:00",
+  "authAfterRun": {
+    "codex": {
+      "available": true,
+      "version": "codex-cli 0.160.0",
+      "auth": "subscription"
+    },
+    "claude": {
+      "available": true,
+      "version": "2.1.207 (Claude Code)",
+      "auth": "absent"
+    },
+    "opencode": {
+      "available": true,
+      "version": "1.18.16",
+      "auth": "absent_for_gateway_provider"
+    }
+  },
+  "claudeRejectedProbe": {
+    "language": "uk",
+    "routing": "on",
+    "attemptOutcome": "failed",
+    "qualification": "upstream_http_401; subsequent auth status reports no login",
+    "models": [
+      "claude-opus-4-8"
+    ],
+    "gateway": {
+      "requests": 2,
+      "requestsObserved": 2,
+      "modes": {
+        "passthrough": 1,
+        "hint": 1
+      },
+      "upstreamStatuses": {
+        "401": 2
+      },
+      "reasons": {
+        "no_tools": 1
+      },
+      "inferenceRequests": 2,
+      "routingLatencyMs": 5292,
+      "loadMs": 16.086750000000002,
+      "nativeTotalMs": 5287.963,
+      "thinkingRequests": 1,
+      "promptCacheRequests": 1,
+      "toolResultRequests": 0
+    },
+    "durationMs": 7651,
+    "completeSession": false
+  },
+  "coldPilot": {
+    "loadedBeforeRun": false,
+    "evidence": "GET /api/ps returned models:[] before the accepted pilot; no forced model unloading",
+    "scenario": {
+      "client": "codex",
+      "language": "uk",
+      "routing": "on",
+      "outcome": "passed",
+      "exitCode": 0,
+      "timedOut": false,
+      "taskVerified": true,
+      "durationMs": 36453,
+      "session": {
+        "toolCalls": 4,
+        "toolResults": 4,
+        "read": true,
+        "edit": true,
+        "check": true,
+        "final": true,
+        "completed": true,
+        "thinking": false
+      },
+      "models": [
+        "gpt-6.1-sol"
+      ],
+      "upstream": "https://chatgpt.com/backend-api/codex",
+      "gateway": {
+        "requests": 3,
+        "requestsObserved": 3,
+        "modes": {
+          "passthrough": 1,
+          "forced": 1,
+          "none": 1
+        },
+        "reasons": {
+          "low_confidence": 1
+        },
+        "inferenceRequests": 6,
+        "routingLatencyMs": 16626,
+        "loadMs": 1352.100083,
+        "nativeTotalMs": 16609.491332999998,
+        "upstreamUsage": {
+          "input": 40815,
+          "output": 308,
+          "cached": 25984
+        },
+        "thinkingRequests": 0,
+        "promptCacheRequests": 0,
+        "toolResultRequests": 2
+      }
+    }
+  },
+  "opencodeConfiguration": {
+    "model": "jev-gateway/gpt-5",
+    "smallModel": "jev-gateway/gpt-5",
+    "gatewayBase": "http://127.0.0.1:1/v1",
+    "outsideEntries": 0,
+    "authenticatedSession": false
+  }
+}

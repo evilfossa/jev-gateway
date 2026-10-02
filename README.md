@@ -329,8 +329,12 @@ scores, or cannot fit a prompt, the original request goes to your LLM unchanged.
 
 The local transport was checked on Ollama 0.35.0 with `nimble:latest`: forced tool selection,
 plain-text replies, an Anthropic thinking hint, closed-set argument filling, extended answer codes,
-and rejection of oversized prompts. These were gateway requests, not complete Codex, Claude Code
-or OpenCode coding sessions.
+and rejection of oversized prompts. Complete Codex 0.160.0 subscription sessions passed in Ukrainian
+and English with routing on, off and Ollama unavailable. Claude Code 2.1.207 reached a thinking/cache
+hint, but its upstream rejected authentication with HTTP 401; its complete sessions remain unverified.
+OpenCode 1.18.16 had no credential for the gateway's upstream, so its complete sessions remain
+unverified. See the [session verification report](docs/nimble-session-verification.md) for measured
+latency, tokens, sample size and the repeatable scenario.
 
 ## Using it with Codex
 

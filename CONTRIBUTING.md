@@ -197,6 +197,24 @@ local setup and model availability checks with an injected transport. Run live O
 separately from the unit suite and report which model and Ollama version you used, and whether you
 checked gateway requests or complete coding sessions.
 
+`scripts/verify-nimble-sessions.mjs` runs the same isolated coding task in Ukrainian and English
+with routing on, off and an unavailable Ollama endpoint. It requires a full checkout with
+development dependencies, an isolated compiled gateway installation, the client binaries and
+their existing upstream authentication. Each client uses a fresh temporary project and gateway
+port. The report contains metadata only; prompts, tool inputs and credentials are not saved.
+Missing or rejected authentication is reported as unverified. Run it after `update-local --prefix`:
+
+```bash
+node --env-file-if-exists=.env scripts/verify-nimble-sessions.mjs \
+  --gateway-root /private/tmp/YOUR_INSTALL/lib/node_modules/jev-gateway \
+  --output /private/tmp/NEW_SESSION_REPORT.json
+```
+
+Use `--client codex`, `--language uk` or `--routing on` to select a subset. The per-session limit is
+180 seconds; `--timeout-ms` changes it. The output file must be new. This is a development script
+and does not ship in the npm package. See [the measured report](docs/nimble-session-verification.md)
+for verified versions and the remaining authentication limits.
+
 ## Adding a wire format
 
 1. Implement `Adapter` (`src/adapters/adapter.ts`) in a new file under `src/adapters/`:
