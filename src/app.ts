@@ -68,7 +68,7 @@ function decisionHeaders(decision: Decision): Record<string, string> {
     headers["x-jev-gateway-tool"] = decision.tool;
   }
   if (decision.jev) {
-    headers["x-jev-gateway-confidence"] = decision.jev.confidence.toFixed(3);
+    if (decision.jev.confidence !== undefined) headers["x-jev-gateway-confidence"] = decision.jev.confidence.toFixed(3);
     headers["x-jev-gateway-latency-ms"] = String(decision.jev.latencyMs);
   }
   return headers;

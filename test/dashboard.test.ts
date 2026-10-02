@@ -1,6 +1,7 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import type { AskJev } from "../src/decide.js";
@@ -143,6 +144,80 @@ describe("createEventLog", () => {
       { seq: 2, time: "2026-01-01T10:00:02.000Z", path: "/v1/responses", tools: 2, mode: "direct", tool: "set_lights", confidence: 0.9 },
     ]);
     expect(createEventLog({ historyFile: join(tmpdir(), "jev-events-missing.log") }).since(0)).toEqual([]);
+  });
+
+  it("whitelists local measurements and leaves unknown historical metrics absent", () => {
+    const log = createEventLog();
+    log.record({ ...entry(1), args: { secret: SECRET }, headers: { authorization: SECRET }, jev: {
+      provider: "ollama", model: "nimble:latest", choice: "read", inputTokens: 100, latencyMs: 10,
+      prompt: SECRET, args: SECRET, credentials: SECRET,
+      inference: { requests: 4, loadMs: 2.5, promptEvalMs: 3, evalMs: 1, totalMs: 7, response: SECRET },
+    } });
+    log.record({ ...entry(1), jev: { choice: "read", confidence: 0.9, inputTokens: 100, latencyMs: 10 } });
+    log.record({ ...entry(1), jev: { provider: "ollama", inference: { requests: -1, loadMs: Infinity, evalMs: "1" } } });
+    const events = log.since(0);
+    expect(events[0]!.jev).toMatchObject({ provider: "ollama", model: "nimble:latest", inference: {
+      requests: 4, loadMs: 2.5, promptEvalMs: 3, evalMs: 1, totalMs: 7,
+    } });
+    expect(events[1]!.jev!.provider).toBeUndefined();
+    expect(events[1]!.jev!.inference).toBeUndefined();
+    expect(events[2]!.jev!.confidence).toBeUndefined();
+    expect(events[2]!.jev!.inference!.requests).toBeUndefined();
+    expect(events[2]!.jev!.inference!.loadMs).toBeUndefined();
+    expect(JSON.stringify(events)).not.toContain(SECRET);
+  });
+});
+
+describe("dashboard measurements", () => {
+  function page() {
+    const nodes = new Map<string, any>();
+    const node = () => ({
+      children: [] as any[], textContent: "", setAttribute() {},
+      append(...children: any[]) { this.children.push(...children); },
+      replaceChildren(...children: any[]) { this.children = children; },
+    });
+    const html = readFileSync(new URL("../src/dashboard.html", import.meta.url), "utf8");
+    const script = html.split("<script>")[1]!.split("</script>")[0]!.replace(/tick\(\);\s*$/, "");
+    const context: Record<string, any> = { URLSearchParams, location: { search: "?peers=none", port: "8787", protocol: "http:" }, document: {
+      createElement: node,
+      getElementById(id: string) { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); },
+    } };
+    runInNewContext(script, context);
+    const content = (n: any): string => typeof n === "object" ? n.textContent + n.children.map(content).join(" ") : String(n);
+    return { context, text: (id: string) => content(nodes.get(id)) };
+  }
+
+  it("keeps local counts, hosted estimates and unknown history separate without double-counting failures", () => {
+    const { context, text } = page();
+    context.renderTiles([
+      { mode: "direct", jev: { provider: "ollama", model: "nimble", inputTokens: 1_000_000, inference: { requests: 6, loadMs: 10 } } },
+      { mode: "passthrough", reason: "jev_error: failed", jev: { provider: "ollama", inputTokens: 123, inference: { requests: 3 } } },
+      { mode: "forced", jev: { provider: "typesafe", inputTokens: 1_000_000, confidence: 0.9, latencyMs: 20 } },
+      { mode: "forced", jev: { inputTokens: 1_000_000, confidence: 0.9, latencyMs: 30 } },
+      { mode: "passthrough", reason: "jev_error: old failure" },
+    ]);
+    expect(text("tiles")).toContain("Model decisions 5");
+    expect(text("tiles")).toContain("Local inference requests 9");
+    expect(text("tiles")).toContain("Local model loading 10 ms 1 decisions");
+    expect(text("tiles")).toContain("Local evaluation – 0 decisions");
+    expect(text("tiles")).toContain("Hosted routing input 1,000,000 ≈ $0.0420");
+    context.renderTiles([{ mode: "forced", jev: { inputTokens: 100 } }]);
+    expect(text("tiles")).toContain("Local inference requests –");
+    expect(text("tiles")).not.toContain("$");
+  });
+
+  it("categorizes model errors independently of display labels and renders partial traces", () => {
+    const { context, text } = page();
+    const event = { mode: "passthrough", reason: "jev_error: 503 from Ollama", jev: {
+      provider: "ollama", model: "nimble", inference: { requests: 1 }, latencyMs: 12,
+    }, time: new Date().toISOString(), path: "/v1/responses", tools: 1, client: "codex" };
+    context.renderShare([event]);
+    context.renderReasons([event]);
+    context.renderRows([event]);
+    expect(text("legend")).toContain("Model failed");
+    expect(text("reasons")).toContain("Ollama");
+    expect(text("rows")).toContain("ollama / nimble");
+    expect(text("rows")).not.toContain("undefined");
   });
 });
 

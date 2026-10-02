@@ -1,6 +1,7 @@
 import type { Questions, SystemOneResult } from "@typesafe-ai/sdk";
 import type { Config } from "./config.js";
 import type { AskJev } from "./decide.js";
+import { addInference, type InferenceMetrics } from "./inference.js";
 
 // The September 2026 checkpoint's single-token codebook, including its non-alphabetic gaps.
 // https://huggingface.co/bespokelabs/Bespoke-Nimble-9B/blob/main/schema_config.json
@@ -87,6 +88,10 @@ function probabilitiesOf(reply: Record<string, unknown>): Map<string, number> {
   return probabilities;
 }
 
+function milliseconds(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value / 1_000_000 : undefined;
+}
+
 /** Score one token per question locally; the whole set shares one timeout and runs serially. */
 export function createAskNimble(
   config: Pick<Config, "jevUrl" | "jevTimeoutMs" | "jevModel">,
@@ -99,57 +104,77 @@ export function createAskNimble(
     const answers: Record<string, SystemOneResult<Questions>["answers"][string]> = {};
     let inputTokens = 0;
     let outputTokens = 0;
-    for (const [name, question] of Object.entries(request.questions)) {
-      signal.throwIfAborted();
-      const field = buildField(name, question);
-      const response = await fetchImpl(config.jevUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          model,
-          prompt: buildPrompt(context, field),
-          raw: true,
-          stream: false,
-          truncate: false,
-          shift: false,
-          logprobs: true,
-          top_logprobs: 20,
-          keep_alive: "10m",
-          // T=1 matches this checkpoint. Disable sampling filters so logprobs retain their meaning.
-          options: { num_ctx: 8192, num_predict: 1, temperature: 1, top_k: 0, top_p: 1, min_p: 0, repeat_penalty: 1, seed: 0 },
-        }),
-        signal,
+    let inference: InferenceMetrics = { requests: 0 };
+    try {
+      for (const [name, question] of Object.entries(request.questions)) {
+        signal.throwIfAborted();
+        const field = buildField(name, question);
+        inference.requests += 1;
+        const response = await fetchImpl(config.jevUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model,
+            prompt: buildPrompt(context, field),
+            raw: true,
+            stream: false,
+            truncate: false,
+            shift: false,
+            logprobs: true,
+            top_logprobs: 20,
+            keep_alive: "10m",
+            // T=1 matches this checkpoint. Disable sampling filters so logprobs retain their meaning.
+            options: { num_ctx: 8192, num_predict: 1, temperature: 1, top_k: 0, top_p: 1, min_p: 0, repeat_penalty: 1, seed: 0 },
+          }),
+          signal,
+        });
+        if (!response.ok) {
+          const hint = response.status === 404 ? `; model "${model}" is missing, check ollama list` : "";
+          throw new Error(`${response.status} from Ollama${hint}`);
+        }
+        const reply = object(await response.json());
+        if (reply) {
+          inference = addInference(inference, {
+            requests: 0,
+            loadMs: milliseconds(reply.load_duration),
+            promptEvalMs: milliseconds(reply.prompt_eval_duration),
+            evalMs: milliseconds(reply.eval_duration),
+            totalMs: milliseconds(reply.total_duration),
+          });
+          if (typeof reply.prompt_eval_count === "number" && Number.isFinite(reply.prompt_eval_count) && reply.prompt_eval_count >= 0) {
+            inputTokens += reply.prompt_eval_count;
+          }
+          if (typeof reply.eval_count === "number" && Number.isFinite(reply.eval_count) && reply.eval_count >= 0) outputTokens += reply.eval_count;
+        }
+        if (!reply || reply.done !== true || reply.eval_count !== 1) throw new Error("Ollama returned an incomplete classification");
+        const scores = probabilitiesOf(reply);
+        const ranked = field.choices
+          .map((choice) => ({ ...choice, probability: scores.get(choice.code) }))
+          .filter((choice): choice is typeof choice & { probability: number } => choice.probability !== undefined)
+          .sort((a, b) => b.probability - a.probability);
+        const winner = ranked[0];
+        if (!winner) throw new Error("Ollama returned no scores for the allowed choices");
+        if (question.type === "noul") {
+          const no = scores.get("A");
+          const yes = scores.get("B");
+          if (no === undefined || yes === undefined || no + yes === 0) throw new Error("Ollama returned incomplete boolean scores");
+          answers[name] = { type: "noul", noul: yes / (no + yes) };
+        } else {
+          // Ollama exposes at most 20 alternatives. Renormalizing a partial list would inflate certainty.
+          answers[name] = {
+            type: "choice",
+            choice: String(winner.value),
+            confidence: winner.probability,
+            probabilities: Object.fromEntries(ranked.map((choice) => [String(choice.value), choice.probability])),
+          };
+        }
+      }
+    } catch (error) {
+      // Preserve only measured work: a later HTTP error or bad score must not erase prior inference.
+      throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
+        inference, usage: { input_tokens: inputTokens, output_tokens: outputTokens },
       });
-      if (!response.ok) {
-        const hint = response.status === 404 ? `; model "${model}" is missing, check ollama list` : "";
-        throw new Error(`${response.status} from Ollama${hint}`);
-      }
-      const reply = object(await response.json());
-      if (!reply || reply.done !== true || reply.eval_count !== 1) throw new Error("Ollama returned an incomplete classification");
-      const scores = probabilitiesOf(reply);
-      const ranked = field.choices
-        .map((choice) => ({ ...choice, probability: scores.get(choice.code) }))
-        .filter((choice): choice is typeof choice & { probability: number } => choice.probability !== undefined)
-        .sort((a, b) => b.probability - a.probability);
-      const winner = ranked[0];
-      if (!winner) throw new Error("Ollama returned no scores for the allowed choices");
-      if (question.type === "noul") {
-        const no = scores.get("A");
-        const yes = scores.get("B");
-        if (no === undefined || yes === undefined || no + yes === 0) throw new Error("Ollama returned incomplete boolean scores");
-        answers[name] = { type: "noul", noul: yes / (no + yes) };
-      } else {
-        // Ollama exposes at most 20 alternatives. Renormalizing a partial list would inflate certainty.
-        answers[name] = {
-          type: "choice",
-          choice: String(winner.value),
-          confidence: winner.probability,
-          probabilities: Object.fromEntries(ranked.map((choice) => [String(choice.value), choice.probability])),
-        };
-      }
-      if (typeof reply.prompt_eval_count === "number") inputTokens += reply.prompt_eval_count;
-      outputTokens += 1;
     }
-    return { model, answers, usage: { input_tokens: inputTokens, output_tokens: outputTokens } };
+    return { model, answers, usage: { input_tokens: inputTokens, output_tokens: outputTokens }, inference };
   };
 }

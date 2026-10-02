@@ -133,6 +133,12 @@ You will see:
   when the provider reports its tokens.
 
 The dashboard only shows request metadata. Prompts, tool arguments, and credentials never reach it.
+Routing decisions carry their provider and model. Local Nimble reports actual Ollama generate
+requests separately from decisions, plus model loading, prompt evaluation, evaluation and native
+total time in milliseconds. Counts include attempted requests that fail; available measurements
+survive a later-stage failure. Routing latency covers the whole decision. Missing timings and
+historical counts appear as unavailable. Hosted cost estimates exclude local and unknown-provider
+history; the displayed rate is a reference estimate, not an Ollama charge.
 
 ### Is it worth it? Compare with a baseline
 

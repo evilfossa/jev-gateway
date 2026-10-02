@@ -125,7 +125,7 @@
   </section>
 
   <section class="card">
-    <h2>Token use: with Jev routing vs. baseline</h2>
+    <h2>Token use: routing vs. baseline</h2>
     <p class="note" id="compare-note"></p>
     <div class="scroll"><table class="compare" id="compare"></table></div>
   </section>
@@ -136,7 +136,7 @@
     <div class="scroll"><table>
       <thead><tr>
         <th>Time</th><th>Client</th><th>Path</th><th>Model</th><th class="num">Tools</th><th>Mode</th><th>Tool</th>
-        <th class="num">Conf.</th><th>Reason</th><th class="num">Status</th><th class="num">Jev ms</th>
+        <th class="num">Conf.</th><th>Reason</th><th class="num">Status</th><th>Routing model</th><th class="num">Inference</th><th class="num">Load ms</th><th class="num">Routing ms</th>
         <th class="num">In</th><th class="num">Out</th><th class="num">Secs</th>
       </tr></thead>
       <tbody id="rows"></tbody>
@@ -159,38 +159,38 @@ const JEV_USD_PER_MILLION_INPUT_TOKENS = 0.042;
 const RANGES = [["15 min", 15 * 60e3], ["1 h", 60 * 60e3], ["24 h", 24 * 60 * 60e3], ["All", Infinity]];
 const CATEGORIES = [
   ["direct", "direct — answered without the LLM"],
-  ["forced", "forced — tool_choice set to Jev's pick"],
-  ["hint", "hint — Jev's pick suggested to the LLM"],
+  ["forced", "forced — tool_choice set to the routing model's pick"],
+  ["hint", "hint — the routing model's pick suggested to the LLM"],
   ["none", "none — tool_choice none"],
   ["passthrough", "passthrough — the LLM decided"],
-  ["failed", "passthrough — Jev failed"],
+  ["failed", "passthrough — Model failed"],
 ];
 // [who made the call, what it means]
 const REASONS = {
-  no_tools: ["Jev not asked", "The request carried no tools, so there was nothing to select."],
-  no_messages: ["Jev not asked", "The request had no conversation to decide on."],
-  previous_response_id: ["Jev not asked", "The conversation lives upstream (previous_response_id); the router can't see it."],
-  agent_message: ["Jev not asked", "The conversation holds a message between Codex agents (agent_message), which the router cannot read."],
-  non_function_tools: ["Jev not asked", "The roster has tools that aren't plain functions."],
-  malformed_tools: ["Jev not asked", "A tool in the roster has no name or no type; upstream gets to reject it."],
-  unsafe_tool_name: ["Jev not asked", "A tool's name has spaces, quotes or brackets in it. No provider accepts such a name, and the router won't repeat it to a model."],
-  unreadable_request: ["Jev not asked", "The body was JSON but not the shape this API documents; upstream gets to reject it."],
-  too_many_tools: ["Jev not asked", "The tool roster is larger than the router can shortlist."],
-  duplicate_tool_names: ["Jev not asked", "Two tools share a name."],
-  reserved_tool_name: ["Jev not asked", "A tool is named no_tool_needed, which the router reserves."],
-  tool_choice_already_decided: ["Jev not asked", "The client already fixed tool_choice itself."],
-  routing_disabled: ["Jev not asked", "Routing is switched off (baseline mode): tokens are metered, Jev is never asked."],
-  disabled_by_header: ["Jev not asked", "The client sent x-jev-gateway: off."],
-  unparseable_body: ["Jev not asked", "The body wasn't readable JSON; upstream gets to reject it."],
-  low_confidence: ["Jev asked", "Jev's confidence was below JEV_MIN_CONFIDENCE."],
-  jev_answers_disagree: ["Jev asked", "The tool pick and the needs-a-tool check contradicted each other."],
-  no_tool_needed: ["Jev asked", "Jev said no tool is needed; left to the LLM (hint-only request, or JEV_ON_NONE=passthrough)."],
-  hosted_tool_selected: ["Jev asked", "Jev picked a provider-run tool, which can't be forced by name."],
-  namespaced_tool_selected: ["Jev asked", "Jev picked a namespaced tool, which backends refuse to force."],
-  jev_unknown_tool: ["Jev asked", "Jev named a tool that isn't in the roster."],
-  upstream_rejected: ["Jev asked", "Upstream refused the rewritten request; the original was replayed."],
-  jev_error: ["Jev failed", "The Jev call errored or timed out. Check TYPESAFE_API_KEY and the network."],
-  jev_unexpected_answer: ["Jev failed", "Jev's reply didn't contain the expected answers."],
+  no_tools: ["Model not asked", "The request carried no tools, so there was nothing to select."],
+  no_messages: ["Model not asked", "The request had no conversation to decide on."],
+  previous_response_id: ["Model not asked", "The conversation lives upstream (previous_response_id); the router can't see it."],
+  agent_message: ["Model not asked", "The conversation holds a message between Codex agents (agent_message), which the router cannot read."],
+  non_function_tools: ["Model not asked", "The roster has tools that aren't plain functions."],
+  malformed_tools: ["Model not asked", "A tool in the roster has no name or no type; upstream gets to reject it."],
+  unsafe_tool_name: ["Model not asked", "A tool's name has spaces, quotes or brackets in it. No provider accepts such a name, and the router won't repeat it to a model."],
+  unreadable_request: ["Model not asked", "The body was JSON but not the shape this API documents; upstream gets to reject it."],
+  too_many_tools: ["Model not asked", "The tool roster is larger than the router can shortlist."],
+  duplicate_tool_names: ["Model not asked", "Two tools share a name."],
+  reserved_tool_name: ["Model not asked", "A tool is named no_tool_needed, which the router reserves."],
+  tool_choice_already_decided: ["Model not asked", "The client already fixed tool_choice itself."],
+  routing_disabled: ["Model not asked", "Routing is switched off (baseline mode): tokens are metered, Routing model is never asked."],
+  disabled_by_header: ["Model not asked", "The client sent x-jev-gateway: off."],
+  unparseable_body: ["Model not asked", "The body wasn't readable JSON; upstream gets to reject it."],
+  low_confidence: ["Model asked", "Routing model's confidence was below JEV_MIN_CONFIDENCE."],
+  jev_answers_disagree: ["Model asked", "The tool pick and the needs-a-tool check contradicted each other."],
+  no_tool_needed: ["Model asked", "Routing model said no tool is needed; left to the LLM (hint-only request, or JEV_ON_NONE=passthrough)."],
+  hosted_tool_selected: ["Model asked", "Routing model picked a provider-run tool, which can't be forced by name."],
+  namespaced_tool_selected: ["Model asked", "Routing model picked a namespaced tool, which backends refuse to force."],
+  jev_unknown_tool: ["Model asked", "Routing model named a tool that isn't in the roster."],
+  upstream_rejected: ["Model asked", "Upstream refused the rewritten request; the original was replayed."],
+  jev_error: ["Model failed", "The routing-model call errored or timed out. For Ollama, check the local endpoint and model; for hosted providers, check the provider key and network."],
+  jev_unexpected_answer: ["Model failed", "Routing model's reply didn't contain the expected answers."],
   router_error: ["Router failed", "The router hit a bug of its own and sent the original request on. Please report the reason shown in the log."],
 };
 
@@ -223,7 +223,7 @@ function h(tag, attrs, ...children) {
 }
 
 const reasonKey = (reason) => ["jev_error", "router_error", "upstream_rejected"].find((prefix) => reason.startsWith(prefix)) ?? reason;
-const failed = (event) => event.mode === "passthrough" && (REASONS[reasonKey(event.reason ?? "")] ?? [])[0] === "Jev failed";
+const failed = (event) => event.mode === "passthrough" && ["jev_error", "jev_unexpected_answer"].includes(reasonKey(event.reason ?? ""));
 const category = (event) => (failed(event) ? "failed" : event.mode);
 const routed = (event) => event.mode !== "passthrough";
 const baseline = (event) => event.reason === "routing_disabled";
@@ -267,7 +267,7 @@ function status(source, now) {
   if (!source.up) return ["offline", "×", "Offline", "This router isn't answering. Start it again to keep routing."];
   const recent = source.events.filter((event) => now - at(event) < IDLE_MS);
   if (source.router?.routing === false) {
-    return ["baseline", "◌", "Baseline — routing off", `Jev is switched off: ${recent.length} request${recent.length === 1 ? "" : "s"} in the last 5 minutes went straight to the LLM, metered for comparison.`];
+    return ["baseline", "◌", "Baseline — routing off", `Routing model is switched off: ${recent.length} request${recent.length === 1 ? "" : "s"} in the last 5 minutes went straight to the LLM, metered for comparison.`];
   }
   if (recent.length === 0) {
     const last = source.events.at(-1);
@@ -275,10 +275,10 @@ function status(source, now) {
   }
   const asked = recent.filter((event) => event.jev || failed(event));
   if (asked.length && failed(asked.at(-1))) {
-    return ["failing", "!", "Jev is failing", `The latest Jev call failed (${asked.at(-1).reason}). Requests fall back to the LLM.`];
+    return ["failing", "!", "Routing model is failing", `The latest routing-model call failed (${asked.at(-1).reason}). Requests fall back to the LLM.`];
   }
   const decided = recent.filter(routed).length;
-  if (decided) return ["routing", "✓", "Routing", `Jev decided ${decided} of the last ${recent.length} requests (5 min).`];
+  if (decided) return ["routing", "✓", "Routing", `Routing model decided ${decided} of the last ${recent.length} requests (5 min).`];
   const reasons = tally(recent.map((event) => reasonKey(event.reason ?? "unknown")));
   return ["passthrough", "→", "Passthrough only", `None of the last ${recent.length} requests were routed — mostly ${reasons[0][0]}.`];
 }
@@ -309,7 +309,7 @@ function renderRouters(now) {
       h("div", { class: "state" }, h("span", { class: "icon", "aria-hidden": "true" }, icon), title),
       h("div", { class: "why" }, why),
       router && source.up && routingSwitch(source),
-      router && h("div", { class: "meta" }, `→ ${router.upstream} · Jev model ${router.jevModel}${router.jevProvider ? " via " + router.jevProvider : ""} · min confidence ${router.minConfidence} · up ${ago(now - Date.parse(router.startedAt))} · ${int(router.recorded)} requests logged`),
+      router && h("div", { class: "meta" }, `→ ${router.upstream} · Routing model ${router.jevModel}${router.jevProvider ? " via " + router.jevProvider : ""} · min confidence ${router.minConfidence} · up ${ago(now - Date.parse(router.startedAt))} · ${int(router.recorded)} requests logged`),
     );
   }));
 }
@@ -327,7 +327,7 @@ const sum = (events, pick) => events.reduce((total, event) => total + (pick(even
 // that is what each way of working really costs. It only means something if the work is alike.
 function renderCompare(events) {
   const metered = events.filter((event) => event.usage);
-  const groups = [["With Jev routing", metered.filter((event) => !baseline(event))], ["Baseline (routing off)", metered.filter(baseline)]];
+  const groups = [["With routing", metered.filter((event) => !baseline(event))], ["Baseline (routing off)", metered.filter(baseline)]];
   const per = (group, pick) => (group.length ? sum(group, pick) / group.length : undefined);
   const rows = [
     ["LLM requests metered", (group) => group.length, int],
@@ -343,10 +343,10 @@ function renderCompare(events) {
   $("compare").replaceChildren(
     h("thead", {}, h("tr", {}, h("th", {}, ""), ...groups.map(([label]) => h("th", {}, label)), h("th", {}, "Difference"))),
     h("tbody", {}, ...rows.map(([label, measure, format], index) => {
-      const [withJev, without] = groups.map(([, group]) => measure(group));
-      const comparable = index > 0 && index < 6 && withJev !== undefined && without;
-      const delta = comparable ? (100 * (withJev - without)) / without : undefined;
-      return h("tr", {}, h("td", {}, label), h("td", {}, cell(withJev, format)), h("td", {}, cell(without, format)),
+      const [withRouting, without] = groups.map(([, group]) => measure(group));
+      const comparable = index > 0 && index < 6 && withRouting !== undefined && without;
+      const delta = comparable ? (100 * (withRouting - without)) / without : undefined;
+      return h("tr", {}, h("td", {}, label), h("td", {}, cell(withRouting, format)), h("td", {}, cell(without, format)),
         h("td", { class: "delta" }, delta === undefined || !Number.isFinite(delta) ? "" : (delta > 0 ? "+" : "") + Math.round(delta) + "%"));
     })),
   );
@@ -358,24 +358,38 @@ function renderCompare(events) {
 
 function renderTiles(events) {
   const asked = events.filter((event) => event.jev);
+  const decisions = events.filter((event) => event.jev || failed(event));
   const failures = events.filter(failed).length;
-  const latencies = asked.map((event) => event.jev.latencyMs).sort((a, b) => a - b);
-  const mean = (values) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined);
-  const tokens = asked.reduce((sum, event) => sum + event.jev.inputTokens, 0);
+  const latencies = asked.map((event) => event.jev.latencyMs).filter(Number.isFinite).sort((a, b) => a - b);
+  const mean = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
+  const local = asked.filter((event) => event.jev.provider === "ollama");
+  const hosted = asked.filter((event) => event.jev.provider && event.jev.provider !== "ollama");
+  const hostedTokens = sum(hosted, (event) => event.jev.inputTokens);
+  const measuredLocal = local.filter((event) => event.jev.inference?.requests !== undefined);
+  const timing = (field) => {
+    const measured = local.filter((event) => event.jev.inference?.[field] !== undefined);
+    return [measured.length ? int(sum(measured, (event) => event.jev.inference[field])) + " ms" : "–", `${int(measured.length)} decisions reporting timings`];
+  };
   const decided = events.filter(routed).length;
   const tile = (label, value, sub) => h("div", { class: "card tile" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value), h("div", { class: "sub" }, sub));
   const avgLatency = mean(latencies);
-  const avgConfidence = mean(asked.map((event) => event.jev.confidence));
+  const avgConfidence = mean(asked.map((event) => event.jev.confidence).filter(Number.isFinite));
   $("tiles").replaceChildren(
     tile("Requests", int(events.length), "through the gateway"),
-    tile("Routed by Jev", pct(decided, events.length), `${int(decided)} requests`),
+    tile("Routed", pct(decided, events.length), `${int(decided)} requests`),
     tile("Passed through", pct(events.length - decided, events.length), `${int(events.length - decided)} requests`),
-    tile("Jev calls", int(asked.length + failures), failures ? `${int(failures)} failed` : "none failed"),
-    tile("Jev latency", avgLatency === undefined ? "–" : int(avgLatency) + " ms", latencies.length ? `p95 ${int(latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * 0.95))])} ms` : "no calls yet"),
-    tile("Jev confidence", avgConfidence === undefined ? "–" : avgConfidence.toFixed(2), "average of its tool picks"),
+    tile("Model decisions", int(decisions.length), `${int(failures)} failed; includes partial local work`),
+    tile("Routing latency", avgLatency === undefined ? "–" : int(avgLatency) + " ms", latencies.length ? `p95 ${int(latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * 0.95))])} ms` : "no measurements yet"),
+    tile("Selection confidence", avgConfidence === undefined ? "–" : avgConfidence.toFixed(2), "average of reported tool picks"),
+    tile("Local inference requests", measuredLocal.length ? int(sum(measuredLocal, (event) => event.jev.inference.requests)) : "–", `${int(measuredLocal.length)} decisions reporting counts; ${int(local.length - measuredLocal.length)} unmeasured`),
+    tile("Local model loading", ...timing("loadMs")),
+    tile("Local prompt evaluation", ...timing("promptEvalMs")),
+    tile("Local evaluation", ...timing("evalMs")),
+    tile("Local native total", ...timing("totalMs")),
+    tile("Local input tokens", local.length ? int(sum(local, (event) => event.jev.inputTokens)) : "–", "Ollama; no hosted charge estimated"),
     tile("LLM input tokens", int(sum(events, (event) => event.usage?.input)), `${pct(sum(events, (event) => event.usage?.cached), sum(events, (event) => event.usage?.input))} served from cache`),
     tile("LLM output tokens", int(sum(events, (event) => event.usage?.output)), `${int(sum(events, (event) => event.usage?.reasoning))} of them reasoning`),
-    tile("Jev input tokens", int(tokens), `≈ $${((tokens / 1e6) * JEV_USD_PER_MILLION_INPUT_TOKENS).toFixed(4)} at $${JEV_USD_PER_MILLION_INPUT_TOKENS}/M`),
+    tile("Hosted routing input", hosted.length ? int(hostedTokens) : "–", hosted.length ? `≈ $${((hostedTokens / 1e6) * JEV_USD_PER_MILLION_INPUT_TOKENS).toFixed(4)} at reference $${JEV_USD_PER_MILLION_INPUT_TOKENS}/M; excludes local and unknown-provider history` : "No identified hosted measurements"),
   );
 }
 
@@ -403,7 +417,7 @@ function renderTimeline(events, now) {
   $("timeline").replaceChildren(...buckets.map((bucket) => {
     const col = h("div", { class: "col", tabindex: "0", "aria-label": `${clock(bucket.start, long)}: ${bucket.total} requests` },
       ...CATEGORIES.filter(([name]) => bucket.counts.get(name)).map(([name]) => h("span", { class: `c-${name}`, style: `height:${(100 * bucket.counts.get(name)) / peak}%` })));
-    const show = () => showTip(col, [[`${clock(bucket.start, long)} – ${clock(bucket.start + width, long)}`, int(bucket.total)], ...CATEGORIES.filter(([name]) => bucket.counts.get(name)).map(([name]) => [name === "failed" ? "Jev failed" : name, int(bucket.counts.get(name))])]);
+    const show = () => showTip(col, [[`${clock(bucket.start, long)} – ${clock(bucket.start + width, long)}`, int(bucket.total)], ...CATEGORIES.filter(([name]) => bucket.counts.get(name)).map(([name]) => [name === "failed" ? "Model failed" : name, int(bucket.counts.get(name))])]);
     col.addEventListener("pointerenter", show);
     col.addEventListener("focus", show);
     col.addEventListener("pointerleave", hideTip);
@@ -426,10 +440,10 @@ const hideTip = () => ($("tip").style.display = "none");
 function renderReasons(events) {
   const passed = events.filter((event) => !routed(event));
   const counts = tally(passed.map((event) => reasonKey(event.reason ?? "unknown")));
-  if (!counts.length) return $("reasons").replaceChildren(h("div", { class: "empty" }, events.length ? "Every request in this range was routed by Jev." : "No requests in this range yet."));
+  if (!counts.length) return $("reasons").replaceChildren(h("div", { class: "empty" }, events.length ? "Every request in this range was routed by the routing model." : "No requests in this range yet."));
   $("reasons").replaceChildren(...counts.map(([name, count]) => {
     const [who, meaning] = REASONS[name] ?? ["", ""];
-    return h("div", { class: `reason c-${who === "Jev failed" ? "failed" : "passthrough"}` },
+    return h("div", { class: `reason c-${who === "Model failed" ? "failed" : "passthrough"}` },
       h("div", { class: "top" }, h("code", {}, name), who && h("span", { class: "tag" }, who), h("span", { class: "count" }, `${int(count)} · ${pct(count, passed.length)}`)),
       h("div", { class: "bar", style: `width:${(100 * count) / counts[0][1]}%` }),
       h("div", { class: "text" }, meaning));
@@ -448,16 +462,19 @@ function renderRows(events) {
       h("td", {}, event.model ?? "–"),
       h("td", { class: "num" }, String(event.tools)),
       h("td", {}, h("i", { class: `dot c-${name}` }), event.mode),
-      h("td", {}, event.tool ?? (event.jev && event.mode === "passthrough" ? `(${event.jev.choice})` : "–")),
+      h("td", {}, event.tool ?? (event.jev?.choice && event.mode === "passthrough" ? `(${event.jev.choice})` : "–")),
       h("td", { class: "num" }, (event.confidence ?? event.jev?.confidence)?.toFixed(2) ?? "–"),
       h("td", { class: "reason-cell", title: event.reason }, event.reason ?? ""),
       h("td", { class: "num" }, event.status === undefined ? "–" : String(event.status)),
-      h("td", { class: "num" }, event.jev ? int(event.jev.latencyMs) : "–"),
+      h("td", {}, event.jev?.provider ? `${event.jev.provider} / ${event.jev.model ?? "–"}` : "–"),
+      h("td", { class: "num" }, event.jev?.inference?.requests === undefined ? "–" : int(event.jev.inference.requests)),
+      h("td", { class: "num", title: event.jev?.inference ? `Prompt evaluation: ${event.jev.inference.promptEvalMs ?? "–"} ms; evaluation: ${event.jev.inference.evalMs ?? "–"} ms; native total: ${event.jev.inference.totalMs ?? "–"} ms` : undefined }, event.jev?.inference?.loadMs === undefined ? "–" : int(event.jev.inference.loadMs)),
+      h("td", { class: "num" }, event.jev?.latencyMs === undefined ? "–" : int(event.jev.latencyMs)),
       h("td", { class: "num", title: event.usage ? `${int(event.usage.cached)} cached, ${int(event.usage.cacheWrite)} written to cache` : undefined }, event.usage ? int(event.usage.input) : "–"),
       h("td", { class: "num", title: event.usage ? `${int(event.usage.reasoning)} reasoning` : undefined }, event.usage ? int(event.usage.output) : "–"),
       h("td", { class: "num" }, event.durationMs === undefined ? "–" : (event.durationMs / 1000).toFixed(1)));
   }));
-  $("note").textContent = `Newest first, up to ${MAX_ROWS}. Dimmed rows are from before the router's last restart; a tool in brackets is what Jev picked when the LLM still made the call. A request appears once its reply has finished, which is when the provider reports its tokens (hover In/Out for cache and reasoning).`;
+  $("note").textContent = `Newest first, up to ${MAX_ROWS}. Dimmed rows are from before the router's last restart; a tool in brackets is what the routing model picked when the LLM still made the call. A request appears once its reply has finished, which is when the provider reports its tokens (hover In/Out for cache and reasoning).`;
 }
 
 function renderControls() {

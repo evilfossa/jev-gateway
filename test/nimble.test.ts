@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { createAskJev, resolveModel } from "../src/jev.js";
-import { chat, fakeUpstream, testConfig } from "./helpers.js";
+import { chat, fakeUpstream, settled, testConfig } from "./helpers.js";
 
 const config = () => loadConfig({ JEV_PROVIDER: "ollama" });
 const request = {
@@ -146,6 +146,30 @@ describe("scoring Nimble through Ollama", () => {
     await expect(createAskJev(config(), partial.fetchImpl)({ ...request, questions: { needs_tool: request.questions.needs_tool } })).rejects.toThrow("incomplete boolean scores");
     const unknown = capture(() => reply({ Z: 0.95 }));
     await expect(createAskJev(config(), unknown.fetchImpl)(request)).rejects.toThrow("no scores for the allowed choices");
+  });
+
+  it("reports native timings in milliseconds and counts generate requests", async () => {
+    const local = capture(() => reply({ A: 0.01, B: 0.95 }, {
+      load_duration: 1_500_000, prompt_eval_duration: 2_000_000, eval_duration: 500_000, total_duration: 4_500_000,
+    }));
+    const result = await createAskJev(config(), local.fetchImpl)(request);
+    expect(result.inference).toEqual({ requests: 2, loadMs: 3, promptEvalMs: 4, evalMs: 1, totalMs: 9 });
+  });
+
+  it("leaves missing or invalid timings absent", async () => {
+    const local = capture(() => reply({ A: 0.01, B: 0.95 }, {
+      load_duration: -1, prompt_eval_duration: "2000", eval_duration: null, total_duration: 0,
+    }));
+    const result = await createAskJev(config(), local.fetchImpl)(request);
+    expect(result.inference).toEqual({ requests: 2, totalMs: 0 });
+  });
+
+  it("preserves completed timings and tokens when a later generate request fails", async () => {
+    const local = capture((body) => field(body).name === "needs_tool" ? new Response("unavailable", { status: 503 }) :
+      reply({ A: 0.95, B: 0.01 }, { load_duration: 3_000_000 }));
+    await expect(createAskJev(config(), local.fetchImpl)(request)).rejects.toMatchObject({
+      inference: { requests: 2, loadMs: 3 }, usage: { input_tokens: 123, output_tokens: 1 },
+    });
   });
 });
 
@@ -326,6 +350,8 @@ describe("routing with local Nimble", () => {
     expect(local.calls.map((call) => field(call.body).name)).toEqual(["shard:0", "shard:1", "tool", "needs_tool", "arg:5:enabled"]);
     expect(new Set(local.calls.map((call) => call.signal)).size).toBe(1);
     expect((await response.json()).usage.prompt_tokens).toBe(5 * 123);
+    const feed = await (await gateway.app.request("/dashboard/events")).json();
+    expect(feed.events[0].jev.inference.requests).toBe(5);
   });
 
   it("builds constant arguments without another inference", async () => {
@@ -337,6 +363,34 @@ describe("routing with local Nimble", () => {
     expect(response.headers.get("x-jev-gateway-mode")).toBe("direct");
     expect(local.calls).toHaveLength(2);
     expect(JSON.parse((await response.json()).choices[0].message.tool_calls[0].function.arguments)).toEqual({ value: 42 });
+  });
+
+  it.each([false, true])("aggregates inference metadata across selection and arguments, failure=%s", async (fail) => {
+    const values: Record<string, string | boolean> = {
+      needs_tool: true, "arg:1:room": "office", "arg:1:on": true, "arg:1:brightness": "50", "stated:1:brightness": false,
+    };
+    const local = capture((body) => {
+      const current = field(body);
+      if (fail && current.name === "arg:1:on") return new Response("unavailable", { status: 503 });
+      const winner = current.choices.find((choice: any) => choice.value === (values[current.name] ?? "set_lights"));
+      expect(winner).toBeDefined();
+      return reply(Object.fromEntries(current.choices.map((choice: any) => [choice.code, choice === winner ? 0.95 : 0.01])), {
+        load_duration: 1_000_000, total_duration: 5_000_000,
+      });
+    });
+    const gateway = app(local, { directCalls: true });
+    const response = await post(gateway.app, chat("Turn the office lights on."));
+    await response.text();
+    await settled();
+    const feed = await (await gateway.app.request("/dashboard/events")).json();
+    expect(feed.events[0].reason ?? feed.events[0].mode).toBe(fail ? "jev_error: 503 from Ollama" : "direct");
+    expect(feed.events[0].jev).toMatchObject({
+      provider: "ollama", model: "nimble:latest", inputTokens: (fail ? 3 : 6) * 123,
+      inference: { requests: fail ? 4 : 6, loadMs: fail ? 3 : 6, totalMs: fail ? 15 : 30 },
+    });
+    expect(feed.events[0].mode).toBe(fail ? "passthrough" : "direct");
+    expect(feed.events[0].jev.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(feed.events[0].jev.inference.evalMs).toBeUndefined();
   });
 
   it.each(["unavailable", "unsupported", "timeout", "low_confidence", "oversized"])("forwards the original request when local inference is %s", async (failure) => {
@@ -353,5 +407,6 @@ describe("routing with local Nimble", () => {
     expect(response.headers.get("x-jev-gateway-mode")).toBe("passthrough");
     expect(gateway.upstream.calls[0]!.body).toEqual(body);
     expect(local.calls.length).toBe(failure === "low_confidence" ? 2 : 1);
+    if (failure !== "low_confidence") expect(response.headers.has("x-jev-gateway-confidence")).toBe(false);
   });
 });

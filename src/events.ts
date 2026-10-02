@@ -21,8 +21,17 @@ export interface RouteEvent {
   durationMs?: number;
   /** What the LLM call cost, as the provider reported it; absent for `direct` and failed calls. */
   usage?: { input: number; output: number; cached: number; cacheWrite: number; reasoning: number };
-  /** Present whenever Jev answered, even if the router then let the LLM decide. */
-  jev?: { choice: string; confidence: number; latencyMs: number; inputTokens: number; shortlist?: string[] };
+  /** Selection or measured partial work, including local failures before an answer. */
+  jev?: {
+    provider?: string;
+    model?: string;
+    choice?: string;
+    confidence?: number;
+    latencyMs?: number;
+    inputTokens?: number;
+    shortlist?: string[];
+    inference?: { requests?: number; loadMs?: number; promptEvalMs?: number; evalMs?: number; totalMs?: number };
+  };
 }
 
 export interface EventLog {
@@ -39,12 +48,14 @@ const HISTORY_BYTES = 2 * 1024 * 1024;
 
 const text = (value: unknown, max = 200) => (typeof value === "string" ? value.slice(0, max) : undefined);
 const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+const nonNegative = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 
 function toEvent(entry: Record<string, unknown>, seq: number): RouteEvent | undefined {
   const mode = text(entry.mode);
   if (entry.event !== "route" || !mode) return undefined;
   const jev = entry.jev && typeof entry.jev === "object" ? (entry.jev as Record<string, unknown>) : undefined;
   const usage = entry.usage && typeof entry.usage === "object" ? (entry.usage as Record<string, unknown>) : undefined;
+  const inference = jev?.inference && typeof jev.inference === "object" ? jev.inference as Record<string, unknown> : undefined;
   return {
     seq,
     time: text(entry.time) ?? new Date().toISOString(),
@@ -65,11 +76,20 @@ function toEvent(entry: Record<string, unknown>, seq: number): RouteEvent | unde
       reasoning: number(usage.reasoning) ?? 0,
     },
     jev: jev && {
-      choice: text(jev.choice) ?? "",
-      confidence: number(jev.confidence) ?? 0,
-      latencyMs: number(jev.latencyMs) ?? 0,
-      inputTokens: number(jev.inputTokens) ?? 0,
+      provider: text(jev.provider),
+      model: text(jev.model),
+      choice: text(jev.choice),
+      confidence: number(jev.confidence),
+      latencyMs: nonNegative(jev.latencyMs),
+      inputTokens: nonNegative(jev.inputTokens),
       shortlist: Array.isArray(jev.shortlist) ? jev.shortlist.flatMap((name) => text(name) ?? []) : undefined,
+      inference: inference && {
+        requests: nonNegative(inference.requests),
+        loadMs: nonNegative(inference.loadMs),
+        promptEvalMs: nonNegative(inference.promptEvalMs),
+        evalMs: nonNegative(inference.evalMs),
+        totalMs: nonNegative(inference.totalMs),
+      },
     },
   };
 }

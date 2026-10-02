@@ -100,6 +100,10 @@ commands for each client.
 With `JEV_DIRECT_CALLS=true`, local Nimble asks only for the selected tool's closed arguments,
 after checking selection confidence and agreement. Shortlisting, selection and arguments share
 the timeout and token accounting. Hosted Jev keeps its speculative argument batch.
+The dashboard records native Ollama timings and generate request counts, including partial work
+before a failure. Its metadata whitelist must name each permitted field; it must never expose
+prompts, arguments or transport headers. Unknown historical metrics stay absent, and local tokens
+are excluded from the hosted cost estimate.
 
 **With a mock routing model.** `scripts/mock-jev.mjs` stands in for Jev without local model
 weights or a hosted key, so a real agent can be driven end to end against a real upstream provider:
