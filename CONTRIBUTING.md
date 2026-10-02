@@ -54,6 +54,13 @@ anything. Gateways capture a content fingerprint at startup; it stays unchanged 
 diagnostics distinguish running code from the files on disk. Never restart a gateway that serves
 the coding session making those edits. Run checks and test servers separately instead.
 
+`npm run update-local` checks and builds an isolated snapshot, then verifies a fresh installation
+before switching the local `current` symlink. Use `-- --prefix NEW_DIRECTORY` to test installation
+without activating it. It never restarts a gateway or overwrites an existing install.
+It needs a full checkout, installed development dependencies and npm. Failed checks clean up
+that run's temporary files and leave `current` unchanged. Installed `jev-*` launchers are selected
+through `PATH`; checkout npm scripts still run from the checkout.
+
 ```bash
 pnpm codex --stop       # the next launch starts a gateway with your changes
 pnpm codex --logs       # follow routing decisions, in a second terminal

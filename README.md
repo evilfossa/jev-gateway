@@ -201,6 +201,38 @@ cannot report it. Different code can share the same release version, so compare 
 as well as versions. Leave active sessions running and restart later to adopt new gateway code.
 With `ROUTER_API_KEY` configured, health still reports only that the service is up.
 
+To install changes from this checkout in one command, with development dependencies already installed:
+
+```bash
+npm run update-local
+```
+
+Run it from a full checkout after `pnpm install`, with Node.js 22.15 or newer and npm available.
+The command snapshots the checkout, checks types and tests, builds and packs it in a temporary
+directory, then installs and verifies a fresh copy under `~/.jev-gateway/installs/`. It switches
+`~/.jev-gateway/current` only after verification. Add `~/.jev-gateway/current/bin` to `PATH` once
+to use these launchers. Existing gateway processes keep their old files and configuration;
+restart them after their active sessions finish to adopt the new code. Global npm files and
+client configuration files are left untouched. Old installs remain available for rollback.
+Failed checks remove the temporary snapshot and any new installation created by that run;
+`current` keeps its previous target. The `PATH` change selects the installed `jev-*` commands;
+`npm run codex` and other checkout scripts continue to use the checkout.
+
+To roll back, replace `current` with a symlink to a previous installation, then restart gateways
+after their active sessions finish. For example, substitute your retained installation path:
+
+```bash
+node --input-type=module -e '
+import { activateInstall } from "./scripts/update-local.mjs";
+activateInstall(process.argv[1], process.argv[2]);
+' "$HOME/.jev-gateway/installs/PREVIOUS_INSTALL" "$HOME/.jev-gateway/current"
+```
+
+Use `npm run update-local -- --prefix /absolute/path/to/new-directory` to verify a separate
+installation without switching `current`. The destination must not exist. This also works when
+the gateway serving your coding session runs from this checkout, because the checkout's `dist/`
+is not rebuilt by the updater.
+
 Use Ollama 0.35.0 or newer with a local model built from the September 24, 2026
 [Bespoke-Nimble-9B checkpoint](https://huggingface.co/bespokelabs/Bespoke-Nimble-9B).
 Check the name with `ollama list`; the examples use an already installed `nimble:latest`.
