@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+Changes in the local checkout since 0.5.0.
+
+### Added
+
+* **ollama:** select tools with local Nimble without a hosted API key. Forward requests unchanged
+  when local inference is unavailable, slow or uncertain.
+* Inspect installation fingerprints, running gateways and local model availability with `--doctor`.
+* Install verified local updates with `npm run update-local`. Each update checks an isolated
+  snapshot and a fresh installation before switching `current`; restart gateways after active
+  sessions finish to use it.
+* **dashboard:** show the routing provider and model, actual local inference request counts and
+  Ollama loading and evaluation timings. Preserve measured work when a later stage fails and
+  exclude local tokens from hosted cost estimates.
+
+### Changed
+
+* **ollama:** ask closed-set arguments only for the selected tool when direct calls are enabled.
+  Shortlisting, selection and arguments share one decision timeout and token accounting.
+
+### Verification
+
+* Six complete Codex subscription sessions passed in Ukrainian and English with routing on, off
+  and Ollama unavailable. Complete Claude Code sessions remain unverified after upstream HTTP 401;
+  OpenCode sessions remain unverified because upstream credentials were unavailable. See the
+  [session verification report](docs/nimble-session-verification.md) for results and sample size.
+
 ## [0.5.0](https://github.com/vinilana/jev-gateway/compare/v0.4.3...v0.5.0) (2026-09-25)
 
 
