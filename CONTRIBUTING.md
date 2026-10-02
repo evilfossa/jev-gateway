@@ -90,12 +90,16 @@ Codex and OpenCode can force supported tools. The upstream LLM still generates r
 arguments. Codex and Claude Code keep their existing authentication; OpenCode defaults to OpenAI
 and `gpt-5`, using `OPENAI_API_KEY` for that upstream.
 
-Local defaults are a 30-second timeout per question set, an 8,192-token context, smaller
+Local defaults are a 30-second timeout for the whole decision, an 8,192-token context, smaller
 conversation and tool-description budgets, and `JEV_DIRECT_CALLS=false`. The transport requires
 real token scores and fails open on missing scores, timeouts or oversized prompts. Complete agent
 sessions require the clients and their upstream credentials; local routing checks need only
 Ollama. See [Local Nimble with Ollama](README.md#local-nimble-with-ollama) for limits and restart
 commands for each client.
+
+With `JEV_DIRECT_CALLS=true`, local Nimble asks only for the selected tool's closed arguments,
+after checking selection confidence and agreement. Shortlisting, selection and arguments share
+the timeout and token accounting. Hosted Jev keeps its speculative argument batch.
 
 **With a mock routing model.** `scripts/mock-jev.mjs` stands in for Jev without local model
 weights or a hosted key, so a real agent can be driven end to end against a real upstream provider:

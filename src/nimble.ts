@@ -92,8 +92,8 @@ export function createAskNimble(
   config: Pick<Config, "jevUrl" | "jevTimeoutMs" | "jevModel">,
   fetchImpl: typeof fetch = fetch,
 ): AskJev {
-  return async (request) => {
-    const signal = AbortSignal.timeout(config.jevTimeoutMs);
+  return async (request, options) => {
+    const signal = options?.signal ?? AbortSignal.timeout(config.jevTimeoutMs);
     const context = typeof request.state === "string" ? request.state : JSON.stringify(request.state);
     const model = request.model ?? config.jevModel;
     const answers: Record<string, SystemOneResult<Questions>["answers"][string]> = {};

@@ -305,11 +305,18 @@ does not renormalize the returned subset. Missing candidates are omitted from th
 probabilities. Boolean questions require both answer scores and normalize those two.
 These confidence values differ from hosted Jev's; tune thresholds on your own tasks.
 
-The local defaults are a 30-second timeout for the whole question set, 12,000 characters of
+The local defaults are a 30-second timeout for the whole decision, 12,000 characters of
 conversation, 2,000 characters of system instructions, and `JEV_DIRECT_CALLS=false`.
 Tool lists over 48 entries are shortlisted with shorter descriptions. Each question is scored
 separately, so larger tool lists and direct argument filling add local inference calls.
-Set `JEV_DIRECT_CALLS=true` to enable closed-set argument filling. The model stays loaded for
+Set `JEV_DIRECT_CALLS=true` to enable closed-set argument filling. Nimble first selects a tool
+and checks whether a tool is needed. Only a confident, consistent selection can trigger questions
+for that tool's closed arguments. Thinking, unsupported tools and open arguments need no extra
+local inference. Shortlisting, selection and argument questions share one timeout; tokens and
+latency include every stage. An argument-stage error forwards the original request upstream.
+Hosted Jev continues to batch speculative arguments for all eligible tools.
+
+The model stays loaded for
 10 minutes after a request. Its context is fixed at 8,192 tokens; Ollama is instructed to reject
 oversized prompts instead of truncating them. If the model is missing, slow, returns incomplete
 scores, or cannot fit a prompt, the original request goes to your LLM unchanged.

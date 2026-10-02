@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { createAskJev, resolveModel } from "../src/jev.js";
@@ -200,6 +200,105 @@ describe("routing with local Nimble", () => {
     expect(body).toContain("set_lights");
     if (stream) expect(body).toContain("data: [DONE]");
     else expect(JSON.parse(JSON.parse(body).choices[0].message.tool_calls[0].function.arguments)).toEqual({ room: "office", on: true });
+    expect(local.calls.map((call) => field(call.body).name)).toEqual([
+      "tool", "needs_tool", "arg:1:room", "arg:1:on", "arg:1:brightness", "stated:1:brightness",
+    ]);
+    expect(new Set(local.calls.map((call) => call.signal)).size).toBe(1);
+  });
+
+  const closedTools = ["first", "second"].map((name) => ({ type: "function", function: {
+    name, parameters: { type: "object", properties: {
+      enabled: { type: "boolean" }, level: { enum: [1, 2] }, fixed: { const: "constant" }, optional: { type: "boolean" },
+    }, required: ["enabled", "level", "fixed"] },
+  } }));
+
+  it.each([0, 1])("asks only the selected closed tool's arguments at index %i", async (index) => {
+    const local = native(index === 0 ? "first" : "second", {
+      [`arg:${index}:enabled`]: true, [`arg:${index}:level`]: "2", [`arg:${index}:optional`]: false, [`stated:${index}:optional`]: true,
+    });
+    const gateway = app(local, { directCalls: true });
+    const response = await post(gateway.app, chat("Enable the tool at level two with optional false.", { tools: closedTools }));
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("direct");
+    const json = await response.json();
+    expect(JSON.parse(json.choices[0].message.tool_calls[0].function.arguments)).toEqual({ enabled: true, level: 2, fixed: "constant", optional: false });
+    expect(local.calls.map((call) => field(call.body).name)).toEqual([
+      "tool", "needs_tool", `arg:${index}:enabled`, `arg:${index}:level`, `arg:${index}:optional`, `stated:${index}:optional`,
+    ]);
+  });
+
+  it.each(["none", "low_confidence", "disagree", "thinking", "hosted", "namespace", "open"])(
+    "skips local argument inference for %s", async (scenario) => {
+      const local = capture((body) => {
+        const current = field(body);
+        if (current.name === "needs_tool") return reply(scenario === "none" || scenario === "disagree" ? { A: 0.95, B: 0.01 } : { A: 0.01, B: 0.95 });
+        const winner = scenario === "none" ? current.choices.at(-1) : current.choices[0];
+        return reply(Object.fromEntries(current.choices.map((choice: any) => [choice.code, choice === winner ? scenario === "low_confidence" ? 0.4 : 0.95 : 0.01])));
+      });
+      const gateway = app(local, { directCalls: true });
+      let body: unknown = chat("Use the first tool.", { tools: closedTools });
+      let path = "/v1/chat/completions";
+      if (scenario === "thinking") {
+        body = { model: "test", max_tokens: 100, thinking: { type: "enabled", budget_tokens: 50 },
+          messages: [{ role: "user", content: "Use first." }],
+          tools: [{ name: "first", input_schema: closedTools[0]!.function.parameters }] };
+        path = "/v1/messages";
+      }
+      if (scenario === "hosted" || scenario === "namespace") {
+        body = { model: "test", input: [{ role: "user", content: "Use the tool." }], tools: scenario === "hosted"
+          ? [{ type: "web_search" }]
+          : [{ type: "namespace", name: "group", tools: [{ type: "function", name: "first", parameters: closedTools[0]!.function.parameters }] }] };
+        path = "/v1/responses";
+      }
+      if (scenario === "open") body = chat("What is the weather?", { tools: [chat("weather").tools![0]] });
+      const response = await post(gateway.app, body, path);
+      expect(response.headers.get("x-jev-gateway-mode")).toBe(scenario === "none" ? "none" : scenario === "thinking" ? "hint" : scenario === "open" ? "forced" : "passthrough");
+      expect(local.calls.map((call) => field(call.body).name)).toEqual(["tool", "needs_tool"]);
+    },
+  );
+
+  it("falls back to forced mode when the selected argument is uncertain", async () => {
+    const local = capture((body) => reply(field(body).name.startsWith("arg:") ? { A: 0.51, B: 0.49 } :
+      field(body).name === "needs_tool" ? { A: 0.01, B: 0.95 } : { A: 0.95, B: 0.01 }));
+    const gateway = app(local, { directCalls: true });
+    const response = await post(gateway.app, chat("Use first.", { tools: closedTools }));
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("forced");
+    expect(local.calls).toHaveLength(6);
+  });
+
+  it("forwards the original streaming request when the argument stage fails", async () => {
+    const local = capture((body) => field(body).name.startsWith("arg:") ? new Response("failed", { status: 503 }) :
+      reply(field(body).name === "needs_tool" ? { A: 0.01, B: 0.95 } : { A: 0.95, B: 0.01 }));
+    const gateway = app(local, { directCalls: true });
+    const body = chat("Use first.", { tools: closedTools, stream: true });
+    const response = await post(gateway.app, body);
+    await response.text();
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("passthrough");
+    expect(response.headers.get("x-jev-gateway-reason")).toContain("503 from Ollama");
+    expect(gateway.upstream.calls[0]!.body).toEqual(body);
+    expect(local.calls.map((call) => field(call.body).name)).toEqual(["tool", "needs_tool", "arg:0:enabled"]);
+  });
+
+  it("does not start argument inference after the shared decision deadline expires", async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    try {
+      const local = capture((body) => {
+        if (field(body).name === "needs_tool") {
+          controller.abort(new DOMException("deadline expired", "TimeoutError"));
+          return reply({ A: 0.01, B: 0.95 });
+        }
+        return reply({ A: 0.95, B: 0.01 });
+      });
+      const gateway = app(local, { directCalls: true });
+      const body = chat("Use first.", { tools: closedTools });
+      const response = await post(gateway.app, body);
+      expect(response.headers.get("x-jev-gateway-mode")).toBe("passthrough");
+      expect(gateway.upstream.calls[0]!.body).toEqual(body);
+      expect(local.calls).toHaveLength(2);
+      expect(timeout).toHaveBeenCalledTimes(1);
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("shortlists large local tool lists within the smaller question budget", async () => {
@@ -214,6 +313,30 @@ describe("routing with local Nimble", () => {
     expect(local.calls.map((call) => field(call.body).name)).toEqual(["shard:0", "shard:1", "tool", "needs_tool"]);
     expect(field(local.calls[0]!.body).choices.length).toBeLessThanOrEqual(49);
     expect(field(local.calls[0]!.body).choices[0].description.length).toBeLessThanOrEqual(240);
+  });
+
+  it("uses the shortlisted tool index for arguments and meters all stages", async () => {
+    const local = native("tool_48", { "arg:5:enabled": true });
+    const gateway = app(local, { directCalls: true });
+    const tools = Array.from({ length: 49 }, (_, index) => ({ type: "function", function: {
+      name: `tool_${index}`, parameters: { type: "object", properties: { enabled: { type: "boolean" } }, required: ["enabled"] },
+    } }));
+    const response = await post(gateway.app, chat("Enable tool_48.", { tools }));
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("direct");
+    expect(local.calls.map((call) => field(call.body).name)).toEqual(["shard:0", "shard:1", "tool", "needs_tool", "arg:5:enabled"]);
+    expect(new Set(local.calls.map((call) => call.signal)).size).toBe(1);
+    expect((await response.json()).usage.prompt_tokens).toBe(5 * 123);
+  });
+
+  it("builds constant arguments without another inference", async () => {
+    const local = native("fixed");
+    const gateway = app(local, { directCalls: true });
+    const response = await post(gateway.app, chat("Use fixed.", { tools: [{ type: "function", function: {
+      name: "fixed", parameters: { type: "object", properties: { value: { const: 42 } }, required: ["value"] },
+    } }] }));
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("direct");
+    expect(local.calls).toHaveLength(2);
+    expect(JSON.parse((await response.json()).choices[0].message.tool_calls[0].function.arguments)).toEqual({ value: 42 });
   });
 
   it.each(["unavailable", "unsupported", "timeout", "low_confidence", "oversized"])("forwards the original request when local inference is %s", async (failure) => {

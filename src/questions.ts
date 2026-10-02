@@ -70,6 +70,35 @@ export function planTool(tool: RouterTool): ToolPlan {
 export const argKey = (toolIndex: number, param: string) => `arg:${toolIndex}:${param}`;
 export const statedKey = (toolIndex: number, param: string) => `stated:${toolIndex}:${param}`;
 
+/** Closed arguments for one tool, keeping its index in the decision's roster. */
+export function buildArgQuestions(plan: ToolPlan, toolIndex: number): Questions | undefined {
+  if (!plan.closedParams) return undefined;
+  const asked = plan.closedParams.filter((param) => param.kind !== "const");
+  const cost = asked.reduce((sum, param) => sum + (param.required ? 1 : 2), 0);
+  if (cost > MAX_ARG_QUESTIONS) return undefined;
+  const questions: Questions = {};
+  for (const param of asked) {
+    const about = `the "${param.name}" argument of the tool "${plan.name}"${
+      param.description ? ` (${truncate(param.description, MAX_DESCRIPTION_CHARS)})` : ""
+    }`;
+    questions[argKey(toolIndex, param.name)] =
+      param.kind === "boolean"
+        ? { type: "noul", instructions: `If the assistant calls "${plan.name}" now, should ${about} be true?` }
+        : {
+            type: "choice",
+            instructions: `If the assistant calls "${plan.name}" now, what value should ${about} have?`,
+            criteria: Object.fromEntries([...param.values.keys()].map((label) => [label, null])),
+          };
+    if (!param.required) {
+      questions[statedKey(toolIndex, param.name)] = {
+        type: "noul",
+        instructions: `Does the conversation state or clearly imply a value for ${about}?`,
+      };
+    }
+  }
+  return questions;
+}
+
 function toolCriteria(tools: RouterTool[], descriptionBudget = QUESTION_CHAR_BUDGET): Record<string, string | null> {
   const limit = Math.min(MAX_DESCRIPTION_CHARS, Math.floor(descriptionBudget / tools.length));
   const criteria: Record<string, string | null> = {};
@@ -109,9 +138,8 @@ export function buildShortlistQuestions(
 }
 
 /**
- * One Jev request decides everything: which tool (if any), whether a tool is needed at all,
- * and — speculatively, for every tool Jev could fully answer — each closed-set argument.
- * Extra questions barely change latency, so code picks the relevant answers afterwards.
+ * Hosted Jev batches selection and speculative arguments. Local Nimble asks selection first,
+ * then uses buildArgQuestions for the chosen tool, since every question is a separate inference.
  */
 export function buildQuestions(
   tools: RouterTool[],
@@ -143,32 +171,14 @@ export function buildQuestions(
 
   let argQuestions = 0;
   plans.forEach((plan, toolIndex) => {
-    const asked = plan.closedParams?.filter((param) => param.kind !== "const") ?? [];
-    const cost = asked.reduce((sum, param) => sum + (param.required ? 1 : 2), 0);
-    if (!plan.closedParams || argQuestions + cost > MAX_ARG_QUESTIONS) {
+    const argumentsForTool = buildArgQuestions(plan, toolIndex);
+    const cost = Object.keys(argumentsForTool ?? {}).length;
+    if (!argumentsForTool || argQuestions + cost > MAX_ARG_QUESTIONS) {
       delete plan.closedParams;
       return;
     }
     argQuestions += cost;
-    for (const param of asked) {
-      const about = `the "${param.name}" argument of the tool "${plan.name}"${
-        param.description ? ` (${truncate(param.description, MAX_DESCRIPTION_CHARS)})` : ""
-      }`;
-      questions[argKey(toolIndex, param.name)] =
-        param.kind === "boolean"
-          ? { type: "noul", instructions: `If the assistant calls "${plan.name}" now, should ${about} be true?` }
-          : {
-              type: "choice",
-              instructions: `If the assistant calls "${plan.name}" now, what value should ${about} have?`,
-              criteria: Object.fromEntries([...param.values.keys()].map((label) => [label, null])),
-            };
-      if (!param.required) {
-        questions[statedKey(toolIndex, param.name)] = {
-          type: "noul",
-          instructions: `Does the conversation state or clearly imply a value for ${about}?`,
-        };
-      }
-    }
+    Object.assign(questions, argumentsForTool);
   });
   return { questions, plans };
 }

@@ -2,6 +2,7 @@ import type { Questions, SystemOneRequest, SystemOneResult } from "@typesafe-ai/
 import type { Config } from "./config.js";
 import {
   argKey,
+  buildArgQuestions,
   buildQuestions,
   buildShortlistQuestions,
   MAX_TOOLS,
@@ -17,8 +18,8 @@ import {
 import { buildState } from "./state.js";
 import type { Json, RouterInput, RouterTool } from "./types.js";
 
-/** The one Jev call the router makes; injectable so tests need no network. */
-export type AskJev = (request: SystemOneRequest<Questions>) => Promise<SystemOneResult<Questions>>;
+/** A routing-model question set; local stages share the decision's deadline. */
+export type AskJev = (request: SystemOneRequest<Questions>, options?: { signal?: AbortSignal }) => Promise<SystemOneResult<Questions>>;
 
 export interface JevTrace {
   choice: string;
@@ -130,6 +131,12 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
   if (skip) return { mode: "passthrough", reason: skip };
 
   const startedAt = performance.now();
+  const local = config.jevProvider === "ollama";
+  const signal = local ? AbortSignal.timeout(config.jevTimeoutMs) : undefined;
+  const ask: AskJev = (request) => {
+    signal?.throwIfAborted();
+    return askJev(request, signal ? { signal } : undefined);
+  };
   const state = buildState(input, config);
   let tools = input.tools;
   let shortlistTokens = 0;
@@ -137,16 +144,16 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
   let plans: ToolPlan[];
   try {
     if (tools.length > (config.jevProvider === "ollama" ? LOCAL_QUESTION_LIMITS.maxTools : MAX_TOOLS)) {
-      ({ tools, inputTokens: shortlistTokens } = await shortlist(tools, state, config, askJev));
+      ({ tools, inputTokens: shortlistTokens } = await shortlist(tools, state, config, ask));
       if (tools.length === 0) return { mode: "passthrough", reason: "jev_unexpected_answer" };
     }
     const built = buildQuestions(tools, {
       allowNone: input.toolChoice !== "required",
-      withArgs: config.directCalls,
+      withArgs: config.directCalls && !local,
       descriptionBudget: config.jevProvider === "ollama" ? LOCAL_QUESTION_LIMITS.descriptionBudget : undefined,
     });
     plans = built.plans;
-    result = await askJev({ state, questions: built.questions, model: config.jevModel });
+    result = await ask({ state, questions: built.questions, model: config.jevModel });
   } catch (error) {
     // Fail open: a Jev outage must never take the gateway down with it.
     return { mode: "passthrough", reason: `jev_error: ${error instanceof Error ? error.message : String(error)}` };
@@ -194,18 +201,27 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
   // Neither can namespaced ones: backends reject both `tool_choice.namespace` and the bare name.
   if (tool.namespace) return { mode: "passthrough", reason: "namespaced_tool_selected", jev };
 
-  const resolved = plan.closedParams && resolveArgs(plan, toolIndex, result.answers, config.argMinCertainty);
   // With thinking on, an answer built here carries no thinking block. The client replays it on the
   // next turn, and the API rejects an assistant tool_use that does not start with one: the
   // session would be stuck. So such a request is steered (hint) and the LLM makes the call.
-  if (config.directCalls && resolved && !input.thinking) {
-    return {
-      mode: "direct",
-      tool: plan.name,
-      args: resolved.args,
-      confidence: Math.min(picked.confidence, resolved.certainty),
-      jev,
-    };
+  if (config.directCalls && plan.closedParams && !input.thinking) {
+    let answers = result.answers;
+    const argQuestions = local ? buildArgQuestions(plan, toolIndex) : undefined;
+    if (argQuestions && Object.keys(argQuestions).length) {
+      try {
+        const argumentsResult = await ask({ state, questions: argQuestions, model: config.jevModel });
+        answers = argumentsResult.answers;
+        jev.inputTokens += argumentsResult.usage.input_tokens;
+      } catch (error) {
+        jev.latencyMs = Math.round(performance.now() - startedAt);
+        return { mode: "passthrough", reason: `jev_error: ${error instanceof Error ? error.message : String(error)}`, jev };
+      }
+    }
+    jev.latencyMs = Math.round(performance.now() - startedAt);
+    const resolved = (!local || argQuestions) && resolveArgs(plan, toolIndex, answers, config.argMinCertainty);
+    if (resolved) {
+      return { mode: "direct", tool: plan.name, args: resolved.args, confidence: Math.min(picked.confidence, resolved.certainty), jev };
+    }
   }
   if (input.steer === "hint") return { mode: "hint", tool: plan.name, confidence: picked.confidence, jev };
   return { mode: "forced", tool: plan.name, kind: tool.kind, confidence: picked.confidence, jev };
