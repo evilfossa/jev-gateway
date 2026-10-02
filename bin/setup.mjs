@@ -1,5 +1,5 @@
-// First-run setup for every jev-<client> launcher: when no key for Jev is configured, ask where to
-// reach Jev and for the key, check it with one tiny real call, and save it. Runs once; `--setup`
+// First-run setup for every jev-<client> launcher: choose hosted Jev or local Nimble, check the
+// provider and save its settings. Runs once; `--setup`
 // runs it again. The pieces are separate functions so the conversation can be tested without a
 // terminal.
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -14,11 +14,11 @@ export function loadProviders(root) {
 
 const present = (env, name) => Boolean(env[name]?.trim());
 
-/** Same rule as the gateway: an explicit JEV_PROVIDER, else whichever key is there. */
+/** Same rule as the gateway: an explicit JEV_PROVIDER, else whichever hosted key is there. */
 export function configuredProvider(env, providers) {
   const chosen = env.JEV_PROVIDER?.trim().toLowerCase();
-  const id = chosen && providers[chosen] ? chosen : Object.keys(providers).find((name) => present(env, providers[name].keyEnv));
-  return id && present(env, providers[id].keyEnv) ? id : undefined;
+  const id = chosen && providers[chosen] ? chosen : Object.keys(providers).find((name) => providers[name].keyEnv && present(env, providers[name].keyEnv));
+  return id && (!providers[id].keyEnv || present(env, providers[id].keyEnv)) ? id : undefined;
 }
 
 /** Set `values` in the text of a .env file, replacing lines that exist and keeping everything else. */
@@ -40,9 +40,24 @@ export function saveEnv(file, values) {
   chmodSync(file, 0o600);
 }
 
-/** One real question to Jev: the only way to know a key works before an agent depends on it. */
+/** Hosted keys need a real Jev question; Ollama setup checks the installed model without inference. */
 export async function validateKey(provider, key, fetchImpl = fetch) {
   const startedAt = Date.now();
+  if (!provider.keyEnv) {
+    try {
+      const response = await fetchImpl(provider.url.replace(/\/generate$/, "/show"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: provider.model }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      return response.ok
+        ? { ok: true, ms: Date.now() - startedAt }
+        : { ok: false, refused: false, reason: `${response.status} from Ollama; check ollama list and ollama serve` };
+    } catch (error) {
+      return { ok: false, refused: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+  }
   const ask = (model) =>
     fetchImpl(provider.url, {
       method: "POST",
@@ -74,8 +89,8 @@ export async function validateKey(provider, key, fetchImpl = fetch) {
  */
 export async function runSetup({ name, providers, envFile, io, validate = validateKey, save = saveEnv }) {
   const ids = Object.keys(providers);
-  io.print(`\n${name} needs an API key for Jev, the model that picks the tool.`);
-  io.print(`You are asked once. The key is saved to ${envFile}, readable only by you.\n`);
+  io.print(`\n${name} needs a model that picks the tool: hosted Jev or local Nimble.`);
+  io.print(`You are asked once. Settings are saved to ${envFile}, readable only by you.\n`);
   io.print("Where do you want to reach Jev?");
   ids.forEach((id, index) => io.print(`  ${index + 1}) ${providers[id].label}: ${providers[id].note}`));
 
@@ -86,6 +101,23 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
     if (!id) io.print(`Please answer with a number from 1 to ${ids.length}.`);
   }
   const provider = providers[id];
+  if (!provider.keyEnv) {
+    const base = (await io.ask("Ollama base URL [http://127.0.0.1:11434]: ")).trim().replace(/\/+$/, "") || "http://127.0.0.1:11434";
+    const model = (await io.ask(`Nimble model [${provider.model}]: `)).trim() || provider.model;
+    io.print("Checking that Ollama has the model…");
+    const result = await validate({ ...provider, url: `${base}/api/generate`, model });
+    if (!result.ok) {
+      io.print(`Could not reach the local model: ${result.reason}`);
+      const keep = (await io.ask("Save these settings anyway? [y/N]: ")).trim().toLowerCase();
+      if (keep !== "y" && keep !== "yes") return undefined;
+    } else {
+      io.print(`Ollama has ${model}. No API key is needed.`);
+    }
+    const values = { JEV_PROVIDER: id, OLLAMA_BASE_URL: base, JEV_MODEL: model };
+    save(envFile, values);
+    io.print(`Saved to ${envFile}. Change it any time with \`${name} --setup\`.\n`);
+    return values;
+  }
   io.print(`\nGet a key at ${provider.keyUrl}`);
 
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -120,8 +152,8 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
     } else {
       io.print(`The key works (Jev answered in ${result.ms} ms).`);
     }
-    const values = { JEV_PROVIDER: id, [provider.keyEnv]: key };
-    if (provider.paidModel) values.JEV_MODEL = model;
+    // A previous local setup may have left an arbitrary Ollama model name in this same file.
+    const values = { JEV_PROVIDER: id, [provider.keyEnv]: key, JEV_MODEL: model };
     save(envFile, values);
     io.print(`Saved to ${envFile}. Change it any time with \`${name} --setup\`.\n`);
     return values;

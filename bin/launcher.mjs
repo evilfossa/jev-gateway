@@ -48,7 +48,7 @@ export async function runLauncher(spec) {
 
   const providers = loadProviders(ROOT);
   const providerLabels = Object.values(providers).map((p) => p.label).join(", ");
-  const providerKeys = Object.values(providers).map((p) => p.keyEnv);
+  const providerKeys = Object.values(providers).map((p) => p.keyEnv).filter(Boolean);
   const keysList = `${providerKeys.slice(0, -1).join(", ")} or ${providerKeys.at(-1)}`;
 
   const help = `${spec.name}: ${spec.client} with tool selection routed through Jev
@@ -60,13 +60,15 @@ export async function runLauncher(spec) {
   ${spec.name} --logs             follow routing decisions live (use a second terminal)
   ${spec.name} --start            start the gateway without opening ${spec.client}
   ${spec.name} --stop             stop the background gateway
-  ${spec.name} --setup            choose where to reach Jev (${providerLabels}) and set the key
+  ${spec.name} --setup            choose the tool-selection model (${providerLabels})
   ${spec.name} --print-config     how to point plain \`${spec.client}\` at the gateway permanently
   ${spec.name} --gateway-help     this text (\`--help\` shows ${spec.client}'s own help)
 
 Environment (or ${ENV_FILES.at(-1)}):
-  A key for Jev is required. ${spec.name} asks for it the first time and saves it; it can be
+  Set JEV_PROVIDER=ollama for local Nimble, without a key. Hosted Jev needs a key; it can be
   ${keysList} (JEV_PROVIDER picks when several are set)
+  OLLAMA_BASE_URL    local Ollama server (default http://127.0.0.1:11434)
+  JEV_MODEL          local Nimble model name (default nimble:latest when JEV_PROVIDER=ollama)
   ${spec.portEnv}   router port for ${spec.client} (default ${spec.defaultPort})
   ${spec.upstreamHelp}
   BROWSER            command --dashboard opens the page with; "none" only prints the URL
@@ -113,8 +115,8 @@ Environment (or ${ENV_FILES.at(-1)}):
   const ensureKey = async () => {
     if (configuredProvider(process.env, providers)) return;
     if (process.stdin.isTTY && process.stdout.isTTY) return setup();
-    const names = Object.values(providers).map((provider) => provider.keyEnv).join(", ");
-    console.error(`${spec.name}: no API key for Jev. Run \`${spec.name} --setup\` in a terminal, or set one of ${names} (environment or ${envFile}).`);
+    const names = Object.values(providers).map((provider) => provider.keyEnv).filter(Boolean).join(", ");
+    console.error(`${spec.name}: no API key for Jev. Run \`${spec.name} --setup\` in a terminal, set JEV_PROVIDER=ollama for local Nimble, or set one of ${names} (environment or ${envFile}).`);
     process.exit(1);
   };
 
@@ -210,7 +212,7 @@ Environment (or ${ENV_FILES.at(-1)}):
     // A gateway that is already running read the old key when it started.
     if (await health()) {
       await stopRouter();
-      console.log(`${spec.name}: the gateway will start with the new key the next time you run ${spec.name}.`);
+      console.log(`${spec.name}: the gateway will start with the new settings the next time you run ${spec.name}.`);
     }
     return;
   }

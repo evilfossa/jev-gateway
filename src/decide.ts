@@ -53,6 +53,8 @@ type Answers = SystemOneResult<Questions>["answers"];
  * rules for names are at least this strict: a request that fails here is theirs to refuse.
  */
 const SAFE_TOOL_NAME = /^[\p{L}\p{N}_.:/-]{1,128}$/u;
+// Nimble's 8k-token context needs smaller questions than hosted Jev's 32k-token context.
+const LOCAL_QUESTION_LIMITS = { maxTools: 48, descriptionBudget: 6_000 };
 
 /** Why a request is not Jev's to decide, or undefined when it is. */
 function skipReason(input: RouterInput): string | undefined {
@@ -107,7 +109,8 @@ async function shortlist(
   config: Config,
   askJev: AskJev,
 ): Promise<{ tools: RouterTool[]; inputTokens: number }> {
-  const { questions, shards } = buildShortlistQuestions(tools);
+  const limits = config.jevProvider === "ollama" ? LOCAL_QUESTION_LIMITS : {};
+  const { questions, shards } = buildShortlistQuestions(tools, limits);
   const result = await askJev({ state, questions, model: config.jevModel });
   const kept = shards.flatMap((shard, index) => {
     const answer = result.answers[shardKey(index)];
@@ -133,13 +136,14 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
   let result: SystemOneResult<Questions>;
   let plans: ToolPlan[];
   try {
-    if (tools.length > MAX_TOOLS) {
+    if (tools.length > (config.jevProvider === "ollama" ? LOCAL_QUESTION_LIMITS.maxTools : MAX_TOOLS)) {
       ({ tools, inputTokens: shortlistTokens } = await shortlist(tools, state, config, askJev));
       if (tools.length === 0) return { mode: "passthrough", reason: "jev_unexpected_answer" };
     }
     const built = buildQuestions(tools, {
       allowNone: input.toolChoice !== "required",
       withArgs: config.directCalls,
+      descriptionBudget: config.jevProvider === "ollama" ? LOCAL_QUESTION_LIMITS.descriptionBudget : undefined,
     });
     plans = built.plans;
     result = await askJev({ state, questions: built.questions, model: config.jevModel });

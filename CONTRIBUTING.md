@@ -36,24 +36,57 @@ npm pack --dry-run   # lists the files that would be published
 ## Running your changes
 
 **As a server.** `pnpm dev` runs `src/index.ts` with reload on save, on http://localhost:8787. It
-reads `.env` from the checkout: `cp .env.example .env` and set a key for Jev (`TYPESAFE_API_KEY`,
-or another provider's: see [Where Jev runs](README.md#where-jev-runs)).
-[`POST /router/decide`](README.md#try-a-decision-without-calling-any-llm) shows what Jev decides
-for a request without calling any LLM.
+reads `.env` from the checkout. If that file does not exist, copy `.env.example` and choose hosted
+Jev with a key (`TYPESAFE_API_KEY` or another provider's), or local Nimble with `JEV_PROVIDER=ollama`.
+See [Where Jev runs](README.md#where-jev-runs) for provider settings.
+[`POST /router/decide`](README.md#try-a-decision-without-calling-any-llm) shows the configured
+model's decision without calling the upstream LLM.
 
-**Through a launcher.** `pnpm codex`, `pnpm claude`, `pnpm opencode`, `pnpm kilo` and `pnpm gemini` run the
-launchers in `bin/`. In a checkout they start the gateway from the TypeScript sources, so there
-is no build step. With no key for Jev configured, the first run asks for one, exactly as an
-installed launcher does. The gateway keeps running in the background between sessions, which
-means it also keeps running your old code: after an edit, restart it.
+**Through a launcher.** `pnpm codex`, `pnpm claude`, `pnpm opencode`, `pnpm kilo`, `pnpm gemini`
+and `pnpm devin` run the launchers in `bin/`. In a checkout they start the gateway from the
+TypeScript sources, so there is no build step. If no tool-selection provider is configured, the
+first run asks you to choose hosted Jev or local Nimble. The gateway keeps running in the
+background between sessions, which means it also keeps running your old code: after an edit,
+restart each client gateway you use.
 
 ```bash
 pnpm codex --stop       # the next launch starts a gateway with your changes
 pnpm codex --logs       # follow routing decisions, in a second terminal
 ```
 
-**Without a TypeSafe key.** `scripts/mock-jev.mjs` stands in for Jev, so a real agent can be
-driven end to end against a real provider:
+**With local Nimble.** Use Ollama 0.35.0 or newer and a local `nimble:latest` built from the
+September 24, 2026 Bespoke-Nimble-9B checkpoint. Check the installed name with `ollama list`, then
+set the shared checkout `.env`:
+
+```dotenv
+JEV_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+JEV_MODEL=nimble:latest
+```
+
+Start the client you need:
+
+```bash
+npm run codex
+npm run claude
+npm run opencode
+```
+
+The corresponding `pnpm codex`, `pnpm claude` and `pnpm opencode` commands use the same settings.
+Nimble selects tools for all three. Claude Code uses hints with thinking or prompt caching;
+Codex and OpenCode can force supported tools. The upstream LLM still generates replies and fills
+arguments. Codex and Claude Code keep their existing authentication; OpenCode defaults to OpenAI
+and `gpt-5`, using `OPENAI_API_KEY` for that upstream.
+
+Local defaults are a 30-second timeout per question set, an 8,192-token context, smaller
+conversation and tool-description budgets, and `JEV_DIRECT_CALLS=false`. The transport requires
+real token scores and fails open on missing scores, timeouts or oversized prompts. Complete agent
+sessions require the clients and their upstream credentials; local routing checks need only
+Ollama. See [Local Nimble with Ollama](README.md#local-nimble-with-ollama) for limits and restart
+commands for each client.
+
+**With a mock routing model.** `scripts/mock-jev.mjs` stands in for Jev without local model
+weights or a hosted key, so a real agent can be driven end to end against a real upstream provider:
 
 ```bash
 MOCK_JEV_SCRIPT=exec_command,no_tool_needed node scripts/mock-jev.mjs &
@@ -71,14 +104,15 @@ reliable specification. Dumps hold whole conversations: keep them out of commits
 ## Where things live
 
 ```
-src/index.ts          entry point: config, the Jev transport, the HTTP server
+src/index.ts          entry point: config, the routing-model transport, the HTTP server
 src/app.ts            routes, auth, headers, and the resend-on-rejection fallback
 src/adapters/         one file per wire format: chat.ts, responses.ts (Codex),
                       messages.ts (Claude Code), gemini.ts; adapter.ts is the interface
 src/state.ts          turns a conversation into Jev state
 src/questions.ts      turns tools into Jev questions and finds closed-set arguments
 src/decide.ts         the mode decision
-src/jev.ts            the call to Jev, for TypeSafe, OpenRouter, Vercel or OpenCode
+src/jev.ts            provider selection and hosted Jev transport; dispatches Ollama to nimble.ts
+src/nimble.ts         local Nimble prompts, Ollama token scores and typed answers
 src/providers.json    the provider table, shared by jev.ts and the launchers' setup
 src/upstream.ts       streaming reverse proxy
 src/usage.ts          token usage read from a reply, normalised across providers
@@ -93,9 +127,10 @@ docs/                 releasing.md, homebrew-tap.md
 ```
 
 A request flows through them in this order: `app.ts` picks the adapter for the path, the adapter
-turns the request into a neutral `RouterInput`, `decide.ts` asks Jev (through `jev.ts`) and returns
-a `Decision`, and
-the adapter either rewrites the request for `upstream.ts` to forward or builds the answer itself.
+turns the request into a neutral `RouterInput`, and `decide.ts` asks the configured model through
+`jev.ts`. Hosted providers answer Jev's questions directly; `nimble.ts` translates them into
+local Ollama classifications. The resulting `Decision` tells the adapter to rewrite the request
+for `upstream.ts` to forward or build the answer itself.
 
 ## What must stay true
 
@@ -103,8 +138,8 @@ The gateway sits between a coding agent and its provider and handles the user's 
 conversations. A change that breaks one of these will not be merged, however useful it is
 otherwise.
 
-- **Fail open.** When Jev is slow, down, unsure, or the request is something the gateway does not
-  understand, the request goes to the provider untouched (`passthrough`). The gateway may make an
+- **Fail open.** When Jev or Nimble is slow, down, unsure, or the request is something the gateway
+  does not understand, the request goes to the provider untouched (`passthrough`). The gateway may make an
   agent cheaper; it must never make one stop working.
 - **Credentials and conversations stay put.** The gateway listens on loopback by default.
   The credentials it forwards to a provider are never written anywhere, and prompts only to
@@ -134,6 +169,13 @@ Tests need no keys and make no network calls. `test/helpers.ts` has what makes t
 opening a port; `test/router.test.ts` is the model to copy. A fix comes with a test that fails
 without it. A feature comes with tests for the modes it touches, streaming included when the
 format streams.
+
+`test/nimble.test.ts` injects Ollama replies with token logprobs; it never starts Ollama or needs
+model weights. It covers local defaults, raw prompts, tool-selection modes, closed-set arguments,
+streaming direct calls and passthrough on inference failures. `test/setup.test.ts` covers keyless
+local setup and model availability checks with an injected transport. Run live Ollama checks
+separately from the unit suite and report which model and Ollama version you used, and whether you
+checked gateway requests or complete coding sessions.
 
 ## Adding a wire format
 

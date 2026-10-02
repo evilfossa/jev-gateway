@@ -11,9 +11,9 @@ export interface Config {
   routerApiKey?: string;
   /** Model used upstream once Jev has already picked the tool. */
   argsModel?: string;
-  /** Who serves Jev: TypeSafe itself, or a gateway that resells it. */
+  /** Who selects tools: hosted Jev, or local Nimble through Ollama. */
   jevProvider: ProviderId;
-  /** The key for that provider; the launchers ask for it when it is missing. */
+  /** The key for hosted Jev; local Ollama needs none. */
   jevApiKey?: string;
   /** Endpoint the questions are posted to; the provider's own unless overridden (tests, proxies). */
   jevUrl: string;
@@ -60,6 +60,8 @@ const bool = (env: Env, key: string, fallback: boolean): boolean => {
 
 export function loadConfig(env: Env = process.env): Config {
   const jevProvider = resolveProvider(env);
+  const local = jevProvider === "ollama";
+  const keyEnv = PROVIDERS[jevProvider].keyEnv;
   const jevModel = resolveModel(jevProvider, str(env, "JEV_MODEL"));
   const onNone = str(env, "JEV_ON_NONE") ?? "force_none";
   if (onNone !== "force_none" && onNone !== "passthrough") {
@@ -73,17 +75,17 @@ export function loadConfig(env: Env = process.env): Config {
     routerApiKey: str(env, "ROUTER_API_KEY"),
     argsModel: str(env, "ARGS_MODEL"),
     jevProvider,
-    jevApiKey: str(env, PROVIDERS[jevProvider].keyEnv),
+    jevApiKey: keyEnv ? str(env, keyEnv) : undefined,
     jevUrl: resolveUrl(jevProvider, env),
     jevModel,
-    jevTimeoutMs: num(env, "JEV_TIMEOUT_MS", 4000),
+    jevTimeoutMs: num(env, "JEV_TIMEOUT_MS", local ? 30_000 : 4000),
     minConfidence: num(env, "JEV_MIN_CONFIDENCE", 0.7),
     argMinCertainty: num(env, "JEV_ARG_MIN_CERTAINTY", 0.8),
     onNone,
-    directCalls: bool(env, "JEV_DIRECT_CALLS", true),
+    directCalls: bool(env, "JEV_DIRECT_CALLS", !local),
     routing: bool(env, "JEV_ROUTING", true),
-    maxStateChars: num(env, "JEV_MAX_STATE_CHARS", 60_000),
-    maxMessageChars: num(env, "JEV_MAX_MESSAGE_CHARS", 4_000),
+    maxStateChars: num(env, "JEV_MAX_STATE_CHARS", local ? 12_000 : 60_000),
+    maxMessageChars: num(env, "JEV_MAX_MESSAGE_CHARS", local ? 2_000 : 4_000),
     debugDumpDir: str(env, "JEV_DEBUG_DUMP_DIR"),
     client: str(env, "JEV_CLIENT") ?? "standalone",
     logFile: str(env, "JEV_LOG_FILE"),

@@ -70,8 +70,8 @@ export function planTool(tool: RouterTool): ToolPlan {
 export const argKey = (toolIndex: number, param: string) => `arg:${toolIndex}:${param}`;
 export const statedKey = (toolIndex: number, param: string) => `stated:${toolIndex}:${param}`;
 
-function toolCriteria(tools: RouterTool[]): Record<string, string | null> {
-  const limit = Math.min(MAX_DESCRIPTION_CHARS, Math.floor(QUESTION_CHAR_BUDGET / tools.length));
+function toolCriteria(tools: RouterTool[], descriptionBudget = QUESTION_CHAR_BUDGET): Record<string, string | null> {
+  const limit = Math.min(MAX_DESCRIPTION_CHARS, Math.floor(descriptionBudget / tools.length));
   const criteria: Record<string, string | null> = {};
   for (const tool of tools) {
     const params = Object.keys(tool.parameters?.properties ?? {});
@@ -88,8 +88,11 @@ export const shardKey = (index: number) => `shard:${index}`;
  * First pass over a roster too big for one question: every shard is ranked in the same Jev call,
  * and the best few of each go on to the real decision — ranking wide, then judging a shortlist.
  */
-export function buildShortlistQuestions(tools: RouterTool[]): { questions: Questions; shards: RouterTool[][] } {
-  const shardCount = Math.ceil(tools.length / MAX_TOOLS);
+export function buildShortlistQuestions(
+  tools: RouterTool[],
+  options: { maxTools?: number; descriptionBudget?: number } = {},
+): { questions: Questions; shards: RouterTool[][] } {
+  const shardCount = Math.ceil(tools.length / (options.maxTools ?? MAX_TOOLS));
   const size = Math.ceil(tools.length / shardCount);
   const shards = Array.from({ length: shardCount }, (_, index) => tools.slice(index * size, (index + 1) * size));
   const questions: Questions = {};
@@ -99,7 +102,7 @@ export function buildShortlistQuestions(tools: RouterTool[]): { questions: Quest
       instructions:
         "Given the conversation, which of these tools would best advance the user's latest request " +
         "if the assistant called it next?",
-      criteria: { ...toolCriteria(shard), [NONE_OF_THESE]: "None of the tools in this list fits the next step." },
+      criteria: { ...toolCriteria(shard, options.descriptionBudget), [NONE_OF_THESE]: "None of the tools in this list fits the next step." },
     };
   });
   return { questions, shards };
@@ -112,10 +115,10 @@ export function buildShortlistQuestions(tools: RouterTool[]): { questions: Quest
  */
 export function buildQuestions(
   tools: RouterTool[],
-  options: { allowNone: boolean; withArgs: boolean },
+  options: { allowNone: boolean; withArgs: boolean; descriptionBudget?: number },
 ): { questions: Questions; plans: ToolPlan[] } {
   const plans = tools.map(planTool);
-  const criteria = toolCriteria(tools);
+  const criteria = toolCriteria(tools, options.descriptionBudget);
   if (options.allowNone) {
     criteria[NO_TOOL] =
       "No tool call is needed right now: the assistant should reply to the user in plain text " +

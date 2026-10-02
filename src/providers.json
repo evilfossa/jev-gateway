@@ -32,5 +32,11 @@
     "model": "jev-1.13-free",
     "models": ["jev-1.13-free", "jev-1.13"],
     "paidModel": "jev-1.13"
+  },
+  "ollama": {
+    "label": "Ollama (Nimble)",
+    "note": "Nimble on your machine, without an API key",
+    "url": "http://127.0.0.1:11434/api/generate",
+    "model": "nimble:latest"
   }
 }

@@ -5,6 +5,9 @@ the gateway asks [Jev](https://docs.typesafe.ai/introduction), TypeSafe's fast d
 instead of leaving that choice to the expensive reasoning model. Everything else goes to your usual
 LLM untouched.
 
+Tool selection can also run on your machine with [Nimble](https://github.com/bespokelabsai/nimble)
+through Ollama, without a Jev API key. See [Local Nimble with Ollama](#local-nimble-with-ollama).
+
 It works with **Codex**, **Claude Code**, **OpenCode** and **Kilo** out of the box, including on
 ChatGPT and claude.ai subscriptions, with Gemini API clients, and with any client that speaks the
 OpenAI, Anthropic or Google Gemini APIs.
@@ -14,9 +17,9 @@ OpenAI, Anthropic or Google Gemini APIs.
 
 ## Quick start
 
-You need Node.js 22.15 or newer, a key for Jev (from TypeSafe, OpenRouter, Vercel AI Gateway or
-OpenCode, see [Where Jev runs](#where-jev-runs)), and Codex, Claude Code, OpenCode, Kilo and/or
-Devin already installed and logged in.
+You need Node.js 22.15 or newer, either a key for Jev (from TypeSafe, OpenRouter, Vercel AI Gateway or
+OpenCode, see [Where Jev runs](#where-jev-runs)) or local Nimble through Ollama, and your coding
+agent already installed with its usual provider credentials.
 
 **1. Install**
 
@@ -35,11 +38,12 @@ jev-gemini     # Gemini CLI, with a Gemini API key
 jev-devin      # use it exactly like `devin`
 ```
 
-**3. Answer two questions, once**
+**3. Choose a tool-selection provider, once**
 
-The first time, the launcher asks where you want to reach Jev and for the key. It checks the key
-with one real call, saves it to `~/.jev-gateway/.env` (readable only by you), and carries on into
-your agent. Every `jev-` command shares that file, so you are asked once for all of them.
+The first time, the launcher asks which provider to use. For hosted Jev, it asks for the key,
+checks it with one real call, and saves the settings to `~/.jev-gateway/.env` (readable only by you).
+For local Nimble, choose option 5 and enter the Ollama server URL and model name; no key is needed.
+Every `jev-` command shares that file, so you are asked once for all of them.
 
 ```text
 Where do you want to reach Jev?
@@ -47,7 +51,8 @@ Where do you want to reach Jev?
   2) OpenRouter: Jev through your OpenRouter account and credits
   3) Vercel AI Gateway: Jev through your Vercel AI Gateway key and billing
   4) OpenCode: Jev through your OpenCode Zen key: free by default, paid only if selected
-Choose 1-4 [1]:
+  5) Ollama (Nimble): Nimble on your machine, without an API key
+Choose 1-5 [1]:
 Paste your TypeSafe API key (input is hidden):
 The key works (Jev answered in 712 ms).
 ```
@@ -70,10 +75,11 @@ gateway.
   failing test"` works like `codex exec "fix the failing test"`.
 - The gateway keeps running after you close the agent, so the next session starts instantly. Stop it
   with `--stop`.
-- Each turn, the gateway asks Jev which tool fits. When Jev is confident, the gateway steers the LLM
-  to that tool. When it is not, the request goes through unchanged.
-- If Jev is down, slow, or your key is wrong, every request simply goes straight to the LLM. The
-  gateway never makes a request fail.
+- Each turn, the gateway asks the configured model, hosted Jev or local Nimble, which tool fits.
+  When it is confident, the gateway steers the LLM to that tool. Otherwise, the request goes through
+  unchanged.
+- If tool selection fails, times out, or returns incomplete scores, the original request goes
+  straight to the LLM.
 - It listens on `127.0.0.1` only.
 
 ## Commands
@@ -85,13 +91,13 @@ All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-kilo`, `j
 | --- | --- |
 | `jev-codex [args]` | Start the gateway if needed, then run Codex through it |
 | `jev-codex --dashboard` | Open the monitoring dashboard in your browser |
-| `jev-codex --routing off` | Baseline mode: stop asking Jev, keep counting tokens |
-| `jev-codex --routing on` | Let Jev decide again |
+| `jev-codex --routing off` | Baseline mode: stop asking the tool-selection model, keep counting tokens |
+| `jev-codex --routing on` | Enable tool selection again |
 | `jev-codex --status` | Is the gateway running, and where does it forward to? |
 | `jev-codex --logs` | Follow routing decisions live (use a second terminal) |
 | `jev-codex --start` | Start the gateway without opening the agent |
 | `jev-codex --stop` | Stop the background gateway (close your sessions first) |
-| `jev-codex --setup` | Choose where to reach Jev again, or change the key |
+| `jev-codex --setup` | Choose hosted Jev or local Nimble, or change provider settings |
 | `jev-codex --print-config` | Print settings to point plain `codex` at the gateway permanently |
 | `jev-codex --gateway-help` | List all of the above |
 
@@ -145,6 +151,7 @@ is only meaningful if you do similar work in both states.
 
 Jev is served by TypeSafe and by three gateways that resell it. All four take the same questions
 and return the same answers, so the choice is about whose account and billing you want to use.
+Ollama runs Nimble locally as an alternative tool-selection model.
 
 | Provider | Key variable | Default model | Get a key |
 | --- | --- | --- | --- |
@@ -152,6 +159,7 @@ and return the same answers, so the choice is about whose account and billing yo
 | OpenRouter | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) |
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `typesafe-ai/jev` | [Vercel dashboard](https://vercel.com/dashboard/ai-gateway/api-keys) |
 | OpenCode | `OPENCODE_API_KEY` | `jev-1.13-free` | [OpenCode Zen](https://opencode.ai/auth) |
+| Ollama (Nimble) | none | `nimble:latest` | [Local setup](#local-nimble-with-ollama) |
 
 OpenCode serves two ids at the same endpoint: `jev-1.13-free` (free,
 [for a limited time](https://opencode.ai/docs/zen/#jev)) and the paid `jev-1.13`. The gateway
@@ -159,12 +167,13 @@ defaults to the free one. If OpenCode says the free model is gone (404 or 410), 
 to the LLM unchanged. The reason names `JEV_MODEL=jev-1.13`, which opts into the paid model.
 The setup wizard offers to save that setting if only the paid model answers its key check.
 
-`jev-codex --setup` (or any other launcher) switches between them and restarts the gateway with the
-new key. To configure it by hand instead, put `JEV_PROVIDER` and the matching key in
-`~/.jev-gateway/.env` or in your environment. Without `JEV_PROVIDER`, the gateway uses whichever key
-it finds, TypeSafe's first. `JEV_MODEL` picks another model; an id written for one provider is
-ignored under another, because the providers name their models differently. `--status` and the
-dashboard show which provider is in use.
+`jev-codex --setup` (or any other launcher) saves the selected provider and model, and stops that
+client's running gateway so its next launch uses the new settings. To configure hosted Jev by hand,
+put `JEV_PROVIDER` and the matching key in `~/.jev-gateway/.env` or in your environment. Without
+`JEV_PROVIDER`, the gateway uses whichever key it finds, TypeSafe's first. `JEV_MODEL` picks another
+model; hosted providers ignore ids outside their supported namespace, while Ollama accepts local
+names as written. When switching manually, set the model for the new provider too. `--status` and
+the dashboard show which provider is in use.
 
 With no terminal to ask in (CI, scripts), a launcher does not wait for input: it exits and names
 the variables it looked for.
@@ -177,11 +186,102 @@ still answers. The OpenRouter and Vercel paths follow those providers' published
 covered by tests, but have not been run with real keys yet. The first-run key check will tell you
 at once if one of them disagrees.
 
+### Local Nimble with Ollama
+
+Use Ollama 0.35.0 or newer with a local model built from the September 24, 2026
+[Bespoke-Nimble-9B checkpoint](https://huggingface.co/bespokelabs/Bespoke-Nimble-9B).
+Check the name with `ollama list`; the examples use an already installed `nimble:latest`.
+If Ollama is not running, start the Ollama app or run `ollama serve`.
+
+The same local Nimble settings work with Codex, Claude Code and OpenCode. From a checkout,
+install the dependencies:
+
+```bash
+npm install
+```
+
+Put the shared settings in the checkout's `.env`:
+
+```dotenv
+JEV_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+JEV_MODEL=nimble:latest
+```
+
+Choose the client to start:
+
+```bash
+npm run codex
+npm run claude
+npm run opencode
+```
+
+Each command starts its own gateway; run only the clients you need. Kilo, Gemini and Devin use
+the same tool-selection settings through their respective launchers.
+
+| Client | Checkout command | Installed launcher | Default port | How Nimble's selection is used |
+| --- | --- | --- | --- | --- |
+| Codex | `npm run codex` | `jev-codex` | `8790` | Forces a supported tool; unsupported or namespaced selections pass through |
+| Claude Code | `npm run claude` | `jev-claude` | `8789` | Adds a tool suggestion with thinking or prompt caching; Claude decides whether to follow it |
+| OpenCode | `npm run opencode` | `jev-opencode` | `8791` | Forces a tool for requests using the injected `jev-gateway` provider |
+
+Launchers read shell variables first, then this checkout's `.env`, then `~/.jev-gateway/.env`.
+One Ollama server serves all clients, but their gateway processes and logs are separate.
+
+Installed launchers can use the same variables in `~/.jev-gateway/.env`, or any launcher's
+`--setup` command and option 5.
+Setup checks that Ollama has the named model; the first routing request checks inference and
+logprob support. A custom model name, including a tag or namespace, is accepted as written.
+`OLLAMA_BASE_URL` is the server root, without `/v1` or `/api/generate`.
+`JEV_URL` can override the full endpoint. After changing the settings, close active agent sessions
+and stop each gateway that was already running:
+
+```bash
+npm run codex -- --stop
+npm run claude -- --stop
+npm run opencode -- --stop
+```
+
+The next launch reads the new settings. Use `jev-codex --stop`, `jev-claude --stop` or
+`jev-opencode --stop` after installation. Status, logs and dashboards use the same command pattern,
+for example `npm run claude -- --status` or `npm run opencode -- --dashboard`.
+
+Nimble selects tools; the agent's upstream LLM still writes replies and fills tool arguments.
+Codex and Claude Code reuse their existing login or API credentials. OpenCode defaults to the
+OpenAI upstream and `gpt-5`, with `OPENAI_API_KEY` for that LLM. Use `JEV_OPENCODE_MODEL` and
+`JEV_OPENCODE_UPSTREAM_BASE_URL` to choose its upstream model and provider; see
+[Credentials and upstream](#credentials-and-upstream). OpenCode requests that explicitly select
+another provider bypass this gateway and its Nimble routing.
+
+The gateway sends one raw, non-thinking Qwen classification prompt per question to
+`/api/generate` and scores the answer codes from real token logprobs. Ollama returns at most
+20 alternatives, so choice confidence uses the probability across the full vocabulary and
+does not renormalize the returned subset. Missing candidates are omitted from the reported
+probabilities. Boolean questions require both answer scores and normalize those two.
+These confidence values differ from hosted Jev's; tune thresholds on your own tasks.
+
+The local defaults are a 30-second timeout for the whole question set, 12,000 characters of
+conversation, 2,000 characters of system instructions, and `JEV_DIRECT_CALLS=false`.
+Tool lists over 48 entries are shortlisted with shorter descriptions. Each question is scored
+separately, so larger tool lists and direct argument filling add local inference calls.
+Set `JEV_DIRECT_CALLS=true` to enable closed-set argument filling. The model stays loaded for
+10 minutes after a request. Its context is fixed at 8,192 tokens; Ollama is instructed to reject
+oversized prompts instead of truncating them. If the model is missing, slow, returns incomplete
+scores, or cannot fit a prompt, the original request goes to your LLM unchanged.
+
+The local transport was checked on Ollama 0.35.0 with `nimble:latest`: forced tool selection,
+plain-text replies, an Anthropic thinking hint, closed-set argument filling, extended answer codes,
+and rejection of oversized prompts. These were gateway requests, not complete Codex, Claude Code
+or OpenCode coding sessions.
+
 ## Using it with Codex
 
 `jev-codex` reuses your existing Codex login. With a ChatGPT subscription the gateway forwards to
 `https://chatgpt.com/backend-api/codex`. With an API key it forwards to `https://api.openai.com/v1`.
 Override either with `JEV_CODEX_UPSTREAM_BASE_URL`.
+
+For local Nimble, use the [shared Ollama settings](#local-nimble-with-ollama) and run
+`npm run codex` from the checkout, or `jev-codex` after installation.
 
 Codex speaks the Responses API, so the gateway handles `POST /v1/responses`, including Codex's
 free-form tools such as `apply_patch`, tools declared inside the conversation, and compressed
@@ -193,6 +293,10 @@ Codex never sees an error caused by the gateway.
 `jev-claude` runs `claude` with only `ANTHROPIC_BASE_URL` set. Claude Code keeps using its saved
 login, so a claude.ai subscription keeps working and its usual limits apply.
 
+For local Nimble, use the [shared Ollama settings](#local-nimble-with-ollama) and run
+`npm run claude` from the checkout, or `jev-claude` after installation. The same `hint` behavior
+below applies when Nimble selects the tool.
+
 Jev can do less here than with Codex, because of how the Anthropic API works. Claude Code runs with
 extended thinking, and the API rejects a forced tool while thinking is on. It also rereads a cached
 conversation on every turn, and changing `tool_choice` would invalidate that cache. So for Claude
@@ -203,6 +307,10 @@ free to ignore. Expect better tool picks on large tool lists, not lower cost or 
 
 Tested with stable OpenCode v1.18.31. OpenCode v2 is out of scope: no `previous_response_id`
 chaining, namespaces, or `additional_tools` behavior is assumed.
+
+For local Nimble, use the [shared Ollama settings](#local-nimble-with-ollama) and run
+`npm run opencode` from the checkout, or `jev-opencode` after installation. Nimble needs no key;
+the upstream LLM still uses the credentials described below.
 
 **Quick path**
 
@@ -272,7 +380,8 @@ jev-opencode --dashboard      # open the monitoring dashboard in your browser
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `TYPESAFE_API_KEY` | required | Authorizes the Jev tool-selection call only. Never sent as the LLM upstream credential |
+| `JEV_PROVIDER` | whichever hosted key is set | Set to `ollama` for local Nimble; independent of OpenCode's upstream LLM provider |
+| `TYPESAFE_API_KEY` | required for TypeSafe only | Authorizes hosted Jev tool selection. Other hosted providers use their own key; Ollama needs none |
 | `OPENAI_API_KEY` | your key | Your LLM credential. OpenCode resolves `{env:OPENAI_API_KEY}` and the gateway forwards it untouched to the LLM upstream |
 | `JEV_OPENCODE_UPSTREAM_BASE_URL` | `https://api.openai.com/v1` | Where the gateway forwards OpenCode traffic: your LLM provider, not the TypeSafe endpoint |
 | `JEV_OPENCODE_MODEL` | `gpt-5` | Model selected as `jev-gateway/<model>` |
@@ -459,9 +568,13 @@ Work from a checkout:
 
 ```bash
 pnpm install
-cp .env.example .env    # set TYPESAFE_API_KEY, and UPSTREAM_BASE_URL if you don't use OpenAI
-pnpm dev                # listens on http://localhost:8787
+cp .env.example .env    # choose hosted Jev with a key, or JEV_PROVIDER=ollama for local Nimble
+pnpm dev               # listens on http://localhost:8787
 ```
+
+Keep an existing `.env` if you already configured it. Set `UPSTREAM_BASE_URL` for your app's LLM
+provider when it differs from OpenAI. `OLLAMA_BASE_URL` selects the server for Nimble tool selection;
+`UPSTREAM_BASE_URL` selects the provider that generates replies.
 
 Then point your client at it:
 
@@ -485,12 +598,15 @@ By default your client's own `Authorization` header is forwarded to the provider
 require a gateway key from clients. Any OpenAI-compatible provider works, for example OpenAI,
 OpenRouter, vLLM, Ollama, or LiteLLM.
 
-To skip Jev for a single request, send the header `x-jev-gateway: off`.
+To skip tool selection for a single request, send the header `x-jev-gateway: off`.
 
 ### Try a decision without calling any LLM
 
-`POST /router/decide` takes a request body, asks Jev, and returns the decision: the mode, the tool,
-the arguments, Jev's confidence, and its latency.
+`POST /router/decide` takes a request body, asks the configured tool-selection model, and returns
+the decision: the mode, the tool, the arguments when available, confidence, and latency.
+It calls hosted Jev or local Nimble but never sends the request to the upstream LLM. With
+Nimble's default `JEV_DIRECT_CALLS=false`, a selected tool returns `forced` rather than filled
+arguments; set `JEV_DIRECT_CALLS=true` to check closed-set argument filling.
 
 ```bash
 curl -s localhost:8787/router/decide -H 'content-type: application/json' -d '{
@@ -506,39 +622,41 @@ curl -s localhost:8787/router/decide -H 'content-type: application/json' -d '{
 
 ## How it works
 
-Jev does not generate text. It answers typed questions about a piece of state (pick one option,
-give a score, or yes/no) and returns calibrated probabilities with a confidence, in one fast call.
-Choosing a tool is exactly that kind of question, so the work is split like this:
+The gateway turns tool selection into typed questions about the conversation. Hosted Jev answers
+them together; local Nimble scores one answer token per question. Both return a tool choice and
+confidence for the gateway to check. The work is split like this:
 
 | Decision | Who makes it |
 | --- | --- |
-| Which tool, or no tool at all | **Jev** |
-| Arguments that are enums, booleans, or constants | **Jev**, in the same call |
-| Open-ended arguments such as free text, numbers, and dates | The LLM, already pointed at Jev's tool |
+| Which tool, or no tool at all | The configured tool-selection model: Jev or Nimble |
+| Arguments that are enums, booleans, or constants | The tool-selection model when `JEV_DIRECT_CALLS=true`; enabled by default for hosted Jev, disabled by default for Ollama |
+| Open-ended arguments such as free text, numbers, and dates | The LLM, already pointed at the selected tool |
 | Plain text replies, and any request without tools | The LLM, untouched |
 
-A request that carries tools triggers one Jev call. The conversation becomes the state, and the
+A routable request with tools asks the configured model to classify the conversation. The
 questions are: which tool (or none), whether a tool is needed at all (an independent cross-check),
-and the value of every closed-set argument. The answer selects a mode, which is reported in the
+and, when direct calls are enabled, the value of every closed-set argument. The answer selects a mode, which is reported in the
 `x-jev-gateway-mode` response header:
 
 | Mode | When | What happens |
 | --- | --- | --- |
-| `direct` | Jev is confident about the tool and every argument is an enum, boolean, or constant | The gateway builds the tool call itself, streaming included. **No LLM call.** Never with extended thinking on (Claude Code): the next turn would replay a tool call with no thinking block, which the API rejects, so such a request gets `hint` instead |
-| `forced` | Jev is confident about the tool, but some arguments are open-ended | Forwarded with `tool_choice` set to that tool, so the LLM only fills in arguments. `ARGS_MODEL` can send these to a cheaper model |
-| `hint` | Jev is confident, but `tool_choice` cannot be changed (Anthropic with thinking on, or a cached conversation) | Forwarded with a one-line suggestion added after the client's last block, so cached prefixes stay valid |
-| `none` | Jev is confident that no tool is needed | Forwarded with `tool_choice: "none"` |
-| `passthrough` | Low confidence, the two checks disagree, Jev failed, there are no tools, or the caller already chose | Forwarded byte for byte. `x-jev-gateway-reason` says why |
+| `direct` | Direct calls are enabled, the routing model is confident about the tool and its closed-set arguments | The gateway builds the tool call itself, streaming included. **No LLM call.** Never with extended thinking on (Claude Code): the next turn would replay a tool call with no thinking block, which the API rejects, so such a request gets `hint` instead |
+| `forced` | The routing model is confident about a tool and no direct answer is available | Forwarded with `tool_choice` set to that tool, so the LLM only fills in arguments. `ARGS_MODEL` can send these to a cheaper model |
+| `hint` | The routing model is confident, but `tool_choice` cannot be changed (Anthropic with thinking on, or a cached conversation) | Forwarded with a one-line suggestion added after the client's last block, so cached prefixes stay valid |
+| `none` | The routing model is confident that no tool is needed | Forwarded with `tool_choice: "none"` |
+| `passthrough` | Low confidence, the two checks disagree, tool selection failed, there are no tools, or the caller already chose | Forwarded byte for byte. `x-jev-gateway-reason` says why |
 
-Responses requests containing Codex `agent_message` items pass through without consulting Jev,
+Responses requests containing Codex `agent_message` items pass through without consulting the routing model,
 with reason `agent_message`. These carry delegated tasks or replies that the router cannot
 interpret and may contain encrypted content, so the model keeps control of tool selection.
 Once an `agent_message` item is in the input, every later request in the same conversation carries
 it. Passthrough therefore lasts for the rest of that conversation, so a subagent session is never
-routed by Jev.
+routed by Jev or Nimble.
 
-Tool lists longer than 120 entries (Claude Code sends about 280) take two Jev calls. The first ranks
-the list in groups. The second decides among the top 3 of each group, using full descriptions.
+With hosted Jev, tool lists longer than 120 entries (Claude Code sends about 280) take two calls.
+The first ranks the list in groups. The second decides among the top 3 of each group, using fuller
+descriptions. With local Nimble, shortlisting starts at 48 tools and uses a separate inference for
+each group, then separate questions for the final choice and cross-check.
 
 ## Configuration
 
@@ -548,13 +666,18 @@ list. The ones worth knowing:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `AI_GATEWAY_API_KEY` or `OPENCODE_API_KEY` | one is required | The key for Jev; the launchers ask for it on first run |
-| `JEV_PROVIDER` | whichever key is set | `typesafe`, `openrouter`, `vercel` or `opencode` |
+| `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `AI_GATEWAY_API_KEY` or `OPENCODE_API_KEY` | required for hosted Jev | The key for Jev; local Ollama needs none |
+| `JEV_PROVIDER` | whichever key is set | `typesafe`, `openrouter`, `vercel`, `opencode` or `ollama` |
+| `JEV_MODEL` | provider default | For Ollama, the local model name; defaults to `nimble:latest` |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server root for local tool selection |
+| `JEV_URL` | provider endpoint | Overrides the full tool-selection endpoint; takes precedence over `OLLAMA_BASE_URL` |
 | `JEV_MIN_CONFIDENCE` | `0.7` | Below this confidence, the LLM decides. Lower it to route more, raise it to be more careful |
 | `JEV_ARG_MIN_CERTAINTY` | `0.8` | Every argument must reach this for a `direct` answer |
-| `JEV_DIRECT_CALLS` | `true` | Set to `false` so the gateway never answers without the LLM |
+| `JEV_DIRECT_CALLS` | `true`; `false` for Ollama | Set to `false` so the gateway never answers without the LLM |
 | `JEV_ROUTING` | `on` | Set to `off` to start in baseline mode |
-| `JEV_TIMEOUT_MS` | `4000` | How long to wait for Jev before letting the LLM decide |
+| `JEV_TIMEOUT_MS` | `4000`; `30000` for Ollama | How long to wait for tool selection before letting the LLM decide |
+| `JEV_MAX_STATE_CHARS` | `60000`; `12000` for Ollama | Conversation budget used to retain the newest turns |
+| `JEV_MAX_MESSAGE_CHARS` | `4000`; `2000` for Ollama | Character limit for system instructions and individual message text |
 | `ARGS_MODEL` | unset | A cheaper model for filling arguments in `forced` mode |
 | `HOST` | `127.0.0.1` | Interface to listen on. Set `ROUTER_API_KEY` before exposing it |
 | `JEV_DEBUG_DUMP_DIR` | unset | Write requests and response summaries to this folder. Credentials in headers are redacted; bodies are written whole, system prompts and conversation included, in files only you can read |
@@ -563,20 +686,24 @@ Each request also logs one JSON line to stdout, or to `~/.jev-gateway/<client>.l
 
 ## Known trade-offs
 
-- Jev adds a network call to every turn that carries tools. Expect roughly half a second to a second.
-- Jev picks **one** tool per turn. In `forced` mode the LLM can still call that tool several times
+- Hosted Jev adds a network call to every routed turn with tools. Expect roughly half a second to
+  a second. Local Nimble adds inference on your machine; model loading and larger tool lists add
+  latency, so measure it in the dashboard.
+- The routing model picks **one** tool per turn. In `forced` mode the LLM can still call that tool several times
   in parallel, but it cannot mix different tools in the same turn.
 - A wrong forced tool can derail a turn. If the model had nothing left to do and is forced to call
   a tool anyway, it may produce an incomplete reply and the agent will retry. Raise
   `JEV_MIN_CONFIDENCE` if you see this.
 - In `hint` mode the LLM still does its own reasoning, so the gain is accuracy, not cost.
-- Jev reads text only and has a 32k-token window. Images become placeholders and long conversations
-  keep their newest turns. It is most accurate in English.
+- Routing reads text only. Hosted Jev has a 32k-token window; local Nimble uses 8,192 tokens.
+  Images become placeholders and long conversations keep their newest turns. Jev is most accurate
+  in English; Nimble's checkpoint is also trained for English text.
 - The default confidence thresholds are starting points. Use the dashboard and baseline mode to tune
   them for your own work.
 - A gateway started by a launcher has no key of its own, because the one `Authorization` header a
   client sends belongs to its provider. Any process on your machine can therefore use it: to reach
-  the provider with credentials of its own, and to ask Jev on your key through `/router/decide`.
+  the provider with credentials of its own, and to ask the routing model through `/router/decide`
+  (using your key for hosted Jev or your machine's resources for local Nimble).
   It is not reachable from other machines. A gateway you run as a server can require a key
   (`ROUTER_API_KEY`), and then `/health` says only that it is up.
 

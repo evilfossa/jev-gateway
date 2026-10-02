@@ -1,14 +1,15 @@
 import type { Questions, SystemOneRequest, SystemOneResult } from "@typesafe-ai/sdk";
 import type { Config } from "./config.js";
 import type { AskJev } from "./decide.js";
+import { createAskNimble } from "./nimble.js";
 import table from "./providers.json" with { type: "json" };
 
 /** One row of the provider table: where Jev runs, which key gets there, and what to call it. */
 interface Provider {
   label: string;
   note: string;
-  keyEnv: string;
-  keyUrl: string;
+  keyEnv?: string;
+  keyUrl?: string;
   url: string;
   model: string;
   /** Only providers that must refuse unlisted ids have a list: the rest tell theirs apart by a slash. */
@@ -19,7 +20,7 @@ interface Provider {
 
 /**
  * Where Jev can be reached. TypeSafe's own API, and gateways that resell it: all of them take
- * the same request body and return the same answers, so one transport serves them. The table is
+ * the same request body and return the same answers. Local Nimble has its own transport. The table is
  * JSON because the launchers' setup wizard (plain .mjs, no build step) reads the same file.
  */
 const providers = table as Record<keyof typeof table, Provider>;
@@ -37,7 +38,10 @@ export function resolveProvider(env: Env): ProviderId {
     if (!isProvider(chosen)) throw new Error(`JEV_PROVIDER must be one of ${Object.keys(providers).join(", ")}, got "${chosen}"`);
     return chosen;
   }
-  return (Object.keys(providers) as ProviderId[]).find((id) => present(env, providers[id].keyEnv)) ?? "typesafe";
+  return (Object.keys(providers) as ProviderId[]).find((id) => {
+    const key = providers[id].keyEnv;
+    return key !== undefined && present(env, key);
+  }) ?? "typesafe";
 }
 
 /**
@@ -45,11 +49,14 @@ export function resolveProvider(env: Env): ProviderId {
  * do (`typesafe/jev-1.13`). A JEV_MODEL written for one provider is ignored under another, so
  * switching provider never sends an id the new one cannot know. OpenCode's ids have no slash
  * either, so OpenCode accepts only its listed ids, and a setting written for TypeSafe never
- * selects its paid model. The others take any id of their shape, so a new model needs no release.
+ * selects its paid model. Local Ollama accepts its own names as written. The others take any id
+ * of their shape, so a new model needs no release.
  */
 export function resolveModel(provider: ProviderId, requested: string | undefined): string {
   const { model, models } = providers[provider];
   if (!requested) return model;
+  if (provider === "ollama") return requested;
+  if (requested === providers.ollama.model) return model;
   if (models) return models.includes(requested) ? requested : model;
   const fits = requested.includes("/") === (provider !== "typesafe") && !providers.opencode.models?.includes(requested);
   return fits ? requested : model;
@@ -62,6 +69,10 @@ export function resolveModel(provider: ProviderId, requested: string | undefined
 export function resolveUrl(provider: ProviderId, env: Env): string {
   const explicit = env.JEV_URL?.trim();
   if (explicit) return explicit;
+  if (provider === "ollama") {
+    const base = env.OLLAMA_BASE_URL?.trim();
+    return base ? `${base.replace(/\/+$/, "")}/api/generate` : providers[provider].url;
+  }
   const base = provider === "typesafe" ? env.TYPESAFE_BASE_URL?.trim() : undefined;
   return base ? `${base.replace(/\/+$/, "")}/v1/systemone` : providers[provider].url;
 }
@@ -84,9 +95,10 @@ function normalize(result: SystemOneResult<Questions>): SystemOneResult<Question
 
 /** The one call the gateway makes to Jev, for whichever provider is configured. */
 export function createAskJev(
-  config: Pick<Config, "jevProvider" | "jevApiKey" | "jevUrl" | "jevTimeoutMs">,
+  config: Pick<Config, "jevProvider" | "jevApiKey" | "jevUrl" | "jevTimeoutMs" | "jevModel">,
   fetchImpl: typeof fetch = fetch,
 ): AskJev {
+  if (config.jevProvider === "ollama") return createAskNimble(config, fetchImpl);
   const provider = providers[config.jevProvider];
   if (!config.jevApiKey) {
     throw new Error(`No API key for Jev: set ${provider.keyEnv} (${provider.label}), or run jev-codex --setup.`);

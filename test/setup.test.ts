@@ -32,11 +32,41 @@ describe("configuredProvider", () => {
     expect(configuredProvider({ AI_GATEWAY_API_KEY: "k" }, providers)).toBe("vercel");
     expect(configuredProvider({ JEV_PROVIDER: "openrouter", TYPESAFE_API_KEY: "k" }, providers)).toBeUndefined();
     expect(configuredProvider({ TYPESAFE_API_KEY: "  " }, providers)).toBeUndefined();
+    expect(configuredProvider({ JEV_PROVIDER: "ollama" }, providers)).toBe("ollama");
+    expect(configuredProvider({ OLLAMA_BASE_URL: "http://localhost:11434" }, providers)).toBeUndefined();
   });
 });
 
 describe("runSetup", () => {
   const envFile = "/nowhere/.env";
+
+  it("sets up local Nimble without ever asking for a key", async () => {
+    const user = script(["5", "http://localhost:11435/", "local/nimble:q8"]);
+    user.io.askSecret = async () => expect.unreachable("Ollama needs no API key");
+    const saved: unknown[] = [];
+    const values = await runSetup({
+      name: "jev-codex", providers, envFile, io: user.io,
+      validate: async (provider: { url: string; model: string }, key: unknown) => {
+        expect(provider.url).toBe("http://localhost:11435/api/generate");
+        expect(provider.model).toBe("local/nimble:q8");
+        expect(key).toBeUndefined();
+        return { ok: true, ms: 5 };
+      },
+      save: (file: string, entries: unknown) => saved.push([file, entries]),
+    });
+    expect(values).toEqual({ JEV_PROVIDER: "ollama", OLLAMA_BASE_URL: "http://localhost:11435", JEV_MODEL: "local/nimble:q8" });
+    expect(saved).toEqual([[envFile, values]]);
+    expect(user.printed.join("\n")).toContain("No API key is needed");
+  });
+
+  it("does not save an unreachable local model unless asked to", async () => {
+    const down = async () => ({ ok: false, reason: "connection refused" });
+    const options = { name: "jev-codex", providers, envFile, validate: down };
+    expect(await runSetup({ ...options, io: script(["ollama", "", "", "n"]).io, save: () => expect.unreachable() })).toBeUndefined();
+    expect(await runSetup({ ...options, io: script(["ollama", "", "", "y"]).io, save: () => {} })).toEqual({
+      JEV_PROVIDER: "ollama", OLLAMA_BASE_URL: "http://127.0.0.1:11434", JEV_MODEL: "nimble:latest",
+    });
+  });
 
   it("asks where and what, checks the key, and saves provider and key together", async () => {
     const user = script(["2", "  or-key  "]);
@@ -47,7 +77,7 @@ describe("runSetup", () => {
       validate: async (provider: { label: string }, key: string) => (checked.push([provider.label, key]), { ok: true, ms: 12 }),
       save: (file: string, entries: unknown) => saved.push([file, entries]),
     });
-    expect(values).toEqual({ JEV_PROVIDER: "openrouter", OPENROUTER_API_KEY: "or-key" });
+    expect(values).toEqual({ JEV_PROVIDER: "openrouter", OPENROUTER_API_KEY: "or-key", JEV_MODEL: "typesafe/jev-1.13" });
     expect(checked).toEqual([["OpenRouter", "or-key"]]);
     expect(saved).toEqual([[envFile, values]]);
     expect(user.printed.join("\n")).toContain("https://openrouter.ai/settings/keys");
@@ -61,7 +91,7 @@ describe("runSetup", () => {
       name: "jev-claude", providers, envFile, io: user.io, save: () => {},
       validate: async (_provider: unknown, key: string) => (key === "right" ? { ok: true, ms: 5 } : { ok: false, refused: true, reason: "401" }),
     });
-    expect(values).toEqual({ JEV_PROVIDER: "typesafe", TYPESAFE_API_KEY: "right" });
+    expect(values).toEqual({ JEV_PROVIDER: "typesafe", TYPESAFE_API_KEY: "right", JEV_MODEL: "jev-latest" });
   });
 
   it("saves nothing when the user gives up, or declines an unchecked key", async () => {
@@ -74,7 +104,7 @@ describe("runSetup", () => {
   it("keeps a key it could not check when the user says so", async () => {
     const offline = async () => ({ ok: false, refused: false, reason: "fetch failed" });
     const values = await runSetup({ name: "x", providers, envFile, io: script(["1", "key", "y"]).io, validate: offline, save: () => {} });
-    expect(values).toEqual({ JEV_PROVIDER: "typesafe", TYPESAFE_API_KEY: "key" });
+    expect(values).toEqual({ JEV_PROVIDER: "typesafe", TYPESAFE_API_KEY: "key", JEV_MODEL: "jev-latest" });
   });
 
   it("asks before a paid key check and keeps the free model if declined", async () => {
@@ -106,6 +136,19 @@ describe("runSetup", () => {
 });
 
 describe("validateKey", () => {
+  it("checks local model availability without posting a System One request or a bearer token", async () => {
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      expect(url).toBe("http://127.0.0.1:11434/api/show");
+      expect(JSON.parse(String(init.body))).toEqual({ model: "nimble:latest" });
+      expect(new Headers(init.headers).get("authorization")).toBeNull();
+      return Response.json({ details: { family: "qwen" } });
+    }) as unknown as typeof fetch;
+    expect(await validateKey(providers.ollama, undefined, fetchImpl)).toMatchObject({ ok: true });
+    const missing = (async () => new Response("model not found", { status: 404 })) as typeof fetch;
+    expect(await validateKey(providers.ollama, undefined, missing)).toMatchObject({ ok: false, refused: false });
+    const down = (async () => { throw new Error("connection refused"); }) as typeof fetch;
+    expect(await validateKey(providers.ollama, undefined, down)).toMatchObject({ ok: false, reason: "connection refused" });
+  });
   it("asks one real question and tells a refused key from a provider that could not be reached", async () => {
     const seen: { url: string; body: any; auth: string | null }[] = [];
     const reply = (status: number) =>
