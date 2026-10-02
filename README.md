@@ -94,6 +94,7 @@ All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-kilo`, `j
 | `jev-codex --routing off` | Baseline mode: stop asking the tool-selection model, keep counting tokens |
 | `jev-codex --routing on` | Enable tool selection again |
 | `jev-codex --status` | Is the gateway running, and where does it forward to? |
+| `jev-codex --doctor` | Inspect installation, configuration sources, running build and Ollama model availability |
 | `jev-codex --logs` | Follow routing decisions live (use a second terminal) |
 | `jev-codex --start` | Start the gateway without opening the agent |
 | `jev-codex --stop` | Stop the background gateway (close your sessions first) |
@@ -187,6 +188,18 @@ covered by tests, but have not been run with real keys yet. The first-run key ch
 at once if one of them disagrees.
 
 ### Local Nimble with Ollama
+
+Run `jev-codex --doctor` (or `jev-claude --doctor`, `jev-opencode --doctor`) when setup or
+routing does not match your expectations. From a checkout, use `npm run codex -- --doctor`.
+It prints the package path, version, content fingerprint, executable selected by `PATH`,
+configuration precedence and the source of the provider/model settings. Key values and URL
+credentials are omitted. For Ollama it checks the server version and model availability without
+running inference. It never starts, stops or reconfigures a gateway.
+
+New gateways report their build identity in `/health`; a gateway started before this feature
+cannot report it. Different code can share the same release version, so compare fingerprints
+as well as versions. Leave active sessions running and restart later to adopt new gateway code.
+With `ROUTER_API_KEY` configured, health still reports only that the service is up.
 
 Use Ollama 0.35.0 or newer with a local model built from the September 24, 2026
 [Bespoke-Nimble-9B checkpoint](https://huggingface.co/bespokelabs/Bespoke-Nimble-9B).

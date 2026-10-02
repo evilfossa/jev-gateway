@@ -49,6 +49,11 @@ first run asks you to choose hosted Jev or local Nimble. The gateway keeps runni
 background between sessions, which means it also keeps running your old code: after an edit,
 restart each client gateway you use.
 
+Use `npm run codex -- --doctor` to inspect the installation and configuration without restarting
+anything. Gateways capture a content fingerprint at startup; it stays unchanged after edits, so
+diagnostics distinguish running code from the files on disk. Never restart a gateway that serves
+the coding session making those edits. Run checks and test servers separately instead.
+
 ```bash
 pnpm codex --stop       # the next launch starts a gateway with your changes
 pnpm codex --logs       # follow routing decisions, in a second terminal

@@ -4,11 +4,14 @@ import { loadConfig } from "./config.js";
 import { createDump } from "./debug.js";
 import { createAskJev } from "./jev.js";
 import { createEventLog } from "./events.js";
+import { installationIdentity } from "../bin/identity.mjs";
+import { fileURLToPath } from "node:url";
 
 const config = loadConfig();
 
 const app = createApp({
   config,
+  identity: installationIdentity(fileURLToPath(new URL("../", import.meta.url))),
   askJev: createAskJev(config),
   dump: createDump(config.debugDumpDir),
   events: createEventLog({ historyFile: config.logFile }),

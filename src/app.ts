@@ -25,6 +25,8 @@ export interface Deps {
   events?: EventLog;
   /** Opt-in wire dumps (see debug.ts); off by default. */
   dump?: Dump;
+  /** Captured once at startup, so later file edits do not masquerade as a running update. */
+  identity?: { root: string; mode: string; version: string; fingerprint: string };
 }
 
 type AnyRequest = { model?: string; stream?: boolean; tools?: unknown[] };
@@ -72,7 +74,7 @@ function decisionHeaders(decision: Decision): Record<string, string> {
   return headers;
 }
 
-export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: writeLog = () => {}, events = createEventLog(), dump }: Deps) {
+export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: writeLog = () => {}, events = createEventLog(), dump, identity }: Deps) {
   const app = new Hono();
 
   /** One routed request: a line in the log, and a row on the dashboard. */
@@ -237,7 +239,9 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
   // Answers before the key is checked, so that a launcher can find its gateway. A gateway that
   // has a key is one somebody else may reach: it says that it is up, and nothing about itself.
   app.get("/health", (c) =>
-    c.json(config.routerApiKey ? { status: "ok" } : { status: "ok", pid: process.pid, upstream: config.upstreamBaseUrl, jev: config.jevProvider }),
+    c.json(config.routerApiKey ? { status: "ok" } : {
+      status: "ok", pid: process.pid, upstream: config.upstreamBaseUrl, jev: config.jevProvider, jevModel: config.jevModel, identity,
+    }),
   );
 
   app.use("*", async (c, next) => {

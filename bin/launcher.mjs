@@ -5,6 +5,8 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, write
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseEnv } from "node:util";
+import { doctor } from "./doctor.mjs";
 import { configuredProvider, loadProviders, runSetup, terminalIo } from "./setup.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -32,14 +34,21 @@ const ENV_FILES = [...(FROM_SOURCE && !process.env.JEV_SKIP_PROJECT_ENV ? [join(
  */
 /** Load the key for Jev and friends; real environment variables win over both files. */
 export function loadEnv() {
-  for (const file of ENV_FILES) if (existsSync(file)) process.loadEnvFile(file);
+  const sources = Object.fromEntries(Object.keys(process.env).map((name) => [name, "environment"]));
+  for (const file of ENV_FILES) {
+    if (!existsSync(file)) continue;
+    const values = parseEnv(readFileSync(file, "utf8"));
+    for (const name of Object.keys(values)) if (process.env[name] === undefined) sources[name] = file;
+    process.loadEnvFile(file);
+  }
+  return sources;
 }
 
 /** How to start a gateway process from this install: `spawn(process.execPath, GATEWAY_ARGS, { cwd: ROOT })`. */
 export { ROOT, ROUTER_ARGS as GATEWAY_ARGS };
 
 export async function runLauncher(spec) {
-  loadEnv();
+  const sources = loadEnv();
 
   const port = Number(process.env[spec.portEnv] ?? spec.defaultPort);
   const origin = `http://127.0.0.1:${port}`;
@@ -57,6 +66,7 @@ export async function runLauncher(spec) {
   ${spec.name} --dashboard        open the monitoring dashboard in your browser
   ${spec.name} --routing on|off   off = baseline mode: stop asking Jev, keep counting tokens
   ${spec.name} --status           is the gateway running, and where does it forward to?
+  ${spec.name} --doctor           inspect install, configuration sources and local model availability
   ${spec.name} --logs             follow routing decisions live (use a second terminal)
   ${spec.name} --start            start the gateway without opening ${spec.client}
   ${spec.name} --stop             stop the background gateway
@@ -206,6 +216,12 @@ Environment (or ${ENV_FILES.at(-1)}):
   const [first] = process.argv.slice(2);
   const flag = LEGACY[first] ?? first?.replace(/^--jev-(?=dashboard$|routing$|status$|logs$|start$|stop$)/, "--");
   if (flag === "--gateway-help") return console.log(help);
+  if (flag === "--doctor") {
+    const report = await doctor({ root: ROOT, spec, origin, sources, envFiles: ENV_FILES, providers });
+    console.log(report.lines.join("\n"));
+    process.exitCode = report.ok ? 0 : 1;
+    return;
+  }
   if (flag === "--setup") {
     if (!process.stdin.isTTY) return console.error(`${spec.name}: --setup asks questions, so it needs a terminal.`);
     await setup();
@@ -240,7 +256,9 @@ Environment (or ${ENV_FILES.at(-1)}):
     const via = running?.jev ? `, Jev via ${providers[running.jev]?.label ?? running.jev}` : "";
     console.log(running ? `${spec.name}: router up on ${origin} → ${running.upstream}${via}` : `${spec.name}: router is not running`);
     const configured = configuredProvider(process.env, providers);
-    console.log(configured ? `key: ${providers[configured].label} (${providers[configured].keyEnv})` : `key: none yet, run \`${spec.name} --setup\``);
+    console.log(configured
+      ? `selector: ${providers[configured].label} (${providers[configured].keyEnv ?? "no key required"})`
+      : `selector: not configured, run \`${spec.name} --setup\``);
     console.log(`logs: ${logFile}`);
     for (const line of await notices(process.argv.slice(3))) console.log(line);
     return;
